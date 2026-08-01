@@ -1,10 +1,15 @@
 import Phaser from "phaser";
 
+export interface VirtualJoystickOptions {
+  /** Which side of the screen this joystick responds to. Default "left". */
+  side?: "left" | "right";
+}
+
 /**
  * Virtual joystick for mobile touch input.
  *
- * Renders a semi-transparent base + thumb on the left side of the screen.
- * Exposes `getDirection()` returning normalized { x, y } for movement.
+ * Renders a semi-transparent base + thumb on the left or right side of the screen.
+ * Exposes `getDirection()` returning normalized { x, y } for movement or aim.
  * Auto-hides on desktop (no touch capability).
  */
 export class VirtualJoystick {
@@ -17,11 +22,21 @@ export class VirtualJoystick {
   private dx: number = 0;
   private dy: number = 0;
   private touchId: number = -1;
+  private readonly side: "left" | "right";
+  private scene: Phaser.Scene;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, radius: number) {
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    radius: number,
+    opts?: VirtualJoystickOptions,
+  ) {
+    this.scene = scene;
     this.baseX = x;
     this.baseY = y;
     this.radius = radius;
+    this.side = opts?.side ?? "left";
 
     this.base = scene.add.circle(x, y, radius, 0xffffff, 0.12);
     this.base.setStrokeStyle(2, 0xffffff, 0.25);
@@ -44,18 +59,25 @@ export class VirtualJoystick {
     }
   }
 
-  private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    // Only activate if the touch is on the left half of the screen
-    if (pointer.x < this.base.scene.scale.width / 2) {
-      this.active = true;
-      this.touchId = pointer.id;
-      this.baseX = pointer.x;
-      this.baseY = pointer.y;
-      this.base.setPosition(this.baseX, this.baseY);
-      this.thumb.setPosition(this.baseX, this.baseY);
-      this.dx = 0;
-      this.dy = 0;
+  private isInSideZone(pointerX: number): boolean {
+    const mid = this.scene.scale.width / 2;
+    if (this.side === "left") {
+      return pointerX < mid;
+    } else {
+      return pointerX >= mid;
     }
+  }
+
+  private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    if (!this.isInSideZone(pointer.x)) return;
+    this.active = true;
+    this.touchId = pointer.id;
+    this.baseX = pointer.x;
+    this.baseY = pointer.y;
+    this.base.setPosition(this.baseX, this.baseY);
+    this.thumb.setPosition(this.baseX, this.baseY);
+    this.dx = 0;
+    this.dy = 0;
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
@@ -94,6 +116,14 @@ export class VirtualJoystick {
   /** Whether a touch is currently active on the joystick. */
   isActive(): boolean {
     return this.active;
+  }
+
+  /** Reposition the joystick base (used on resize). */
+  setPosition(x: number, y: number): void {
+    this.baseX = x;
+    this.baseY = y;
+    this.base.setPosition(x, y);
+    this.thumb.setPosition(x, y);
   }
 
   destroy(): void {

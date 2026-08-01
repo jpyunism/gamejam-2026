@@ -24,15 +24,8 @@ test.describe("Neon Drift — game loads and renders", () => {
     });
     expect(hasWebGL).toBe(true);
 
-    // Verify the canvas has the expected game resolution (1280x960)
-    const canvasSize = await page.evaluate(() => {
-      const c = document.querySelector("canvas")!;
-      return { width: c.width, height: c.height };
-    });
-    expect(canvasSize.width).toBe(1280);
-    expect(canvasSize.height).toBe(960);
-
-    // Verify the canvas has rendered content by checking the data URL size
+    // With RESIZE mode the canvas dimensions match the viewport.
+    // Assert the canvas has rendered content by checking the data URL size
     const dataUrl = await page.evaluate(() => {
       const c = document.querySelector("canvas")!;
       return c.toDataURL();

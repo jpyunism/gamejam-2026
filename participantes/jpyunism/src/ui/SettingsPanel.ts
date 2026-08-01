@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { AudioManager } from "../audio/AudioManager";
 import { AudioSettings } from "../store/AudioSettings";
+import { scaleFactor, scaledFont } from "../core/layout";
 
 /**
  * Reusable settings overlay for `MenuScene` and the `GameScene` pause overlay.
@@ -27,8 +28,6 @@ import { AudioSettings } from "../store/AudioSettings";
  *   - `destroy()` — same as `hide()` but also releases the debounce timer
  */
 
-const PANEL_WIDTH = 360;
-const PANEL_HEIGHT = 220;
 const PANEL_BG_COLOR = 0x10102a;
 const PANEL_BG_ALPHA = 0.95;
 const PANEL_STROKE_COLOR = 0x00ffff;
@@ -89,9 +88,6 @@ export class SettingsPanel {
   ) {
     this.scene = scene;
     this.audio = audio;
-    // _opts reserved for future styling — the panel currently uses one
-    // visual style that looks reasonable in both the menu and the pause
-    // overlay.
   }
 
   /**
@@ -104,8 +100,12 @@ export class SettingsPanel {
     }
 
     const { width, height } = this.scene.scale;
+    const s = scaleFactor(width);
     const x = width / 2;
     const y = height / 2;
+
+    const PANEL_WIDTH = Math.round(360 * s);
+    const PANEL_HEIGHT = Math.round(220 * s);
 
     const container = this.scene.add.container(x, y);
     container.setDepth(2100);
@@ -124,24 +124,24 @@ export class SettingsPanel {
     container.add(bg);
 
     // Title.
-    const title = this.scene.add.text(0, -PANEL_HEIGHT / 2 + 28, "SETTINGS", {
+    const title = this.scene.add.text(0, -PANEL_HEIGHT / 2 + Math.round(28 * s), "SETTINGS", {
       fontFamily: "monospace",
-      fontSize: "18px",
+      fontSize: scaledFont(18, s),
       color: TITLE_COLOR,
     });
     title.setOrigin(0.5);
     container.add(title);
 
     // ---------- Slider ----------
-    const trackXStart = -PANEL_WIDTH / 2 + SLIDER_PADDING_X;
+    const trackXStart = -PANEL_WIDTH / 2 + Math.round(SLIDER_PADDING_X * s);
     this.trackX = trackXStart;
-    this.trackWidth = PANEL_WIDTH - SLIDER_PADDING_X * 2;
+    this.trackWidth = PANEL_WIDTH - Math.round(SLIDER_PADDING_X * s) * 2;
 
     const trackBg = this.scene.add.rectangle(
       0,
-      SLIDER_Y,
+      Math.round(SLIDER_Y * s),
       this.trackWidth,
-      SLIDER_TRACK_HEIGHT,
+      Math.round(SLIDER_TRACK_HEIGHT * s),
       0x222244,
       1,
     );
@@ -152,9 +152,9 @@ export class SettingsPanel {
     const fillW = Math.round(this.trackWidth * initialVol);
     const trackFill = this.scene.add.rectangle(
       trackXStart + fillW / 2,
-      SLIDER_Y,
+      Math.round(SLIDER_Y * s),
       Math.max(1, fillW),
-      SLIDER_TRACK_HEIGHT,
+      Math.round(SLIDER_TRACK_HEIGHT * s),
       0x00ffff,
       1,
     );
@@ -163,8 +163,8 @@ export class SettingsPanel {
 
     const knob = this.scene.add.circle(
       trackXStart + fillW,
-      SLIDER_Y,
-      SLIDER_KNOB_RADIUS,
+      Math.round(SLIDER_Y * s),
+      Math.round(SLIDER_KNOB_RADIUS * s),
       0xffffff,
       1,
     );
@@ -176,11 +176,11 @@ export class SettingsPanel {
     // "VOLUME" label, left of the track.
     const volumeLabel = this.scene.add.text(
       trackXStart,
-      SLIDER_Y - 26,
+      Math.round(SLIDER_Y * s) - Math.round(26 * s),
       "VOLUME",
       {
         fontFamily: "monospace",
-        fontSize: "12px",
+        fontSize: scaledFont(12, s),
         color: VOLUME_LABEL_COLOR,
       },
     );
@@ -189,12 +189,12 @@ export class SettingsPanel {
 
     // Live percentage label, right of the track.
     const valueLabel = this.scene.add.text(
-      PANEL_WIDTH / 2 - SLIDER_PADDING_X,
-      SLIDER_Y - 26,
+      PANEL_WIDTH / 2 - Math.round(SLIDER_PADDING_X * s),
+      Math.round(SLIDER_Y * s) - Math.round(26 * s),
       `${Math.round(initialVol * 100)}%`,
       {
         fontFamily: "monospace",
-        fontSize: "12px",
+        fontSize: scaledFont(12, s),
         color: VALUE_LABEL_COLOR,
       },
     );
@@ -202,14 +202,12 @@ export class SettingsPanel {
     container.add(valueLabel);
     this.valueLabel = valueLabel;
 
-    // Make the entire track + knob area interactive for drag. A hit
-    // rectangle lets the user click anywhere along the track to jump the
-    // knob there.
+    // Make the entire track + knob area interactive for drag.
     const sliderHit = this.scene.add.rectangle(
       0,
-      SLIDER_Y,
+      Math.round(SLIDER_Y * s),
       this.trackWidth,
-      SLIDER_KNOB_RADIUS * 2,
+      Math.round(SLIDER_KNOB_RADIUS * s) * 2,
       0xffffff,
       0,
     );
@@ -220,7 +218,6 @@ export class SettingsPanel {
       this.beginDrag(pointer);
     });
     sliderHit.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      // Click on track → jump knob to that x and start a drag.
       this.jumpToPointer(pointer);
       this.beginDrag(pointer);
     });
@@ -228,9 +225,9 @@ export class SettingsPanel {
     // ---------- Mute toggle ----------
     const muteBtn = this.scene.add.rectangle(
       0,
-      MUTE_BTN_Y,
-      MUTE_BTN_WIDTH,
-      MUTE_BTN_HEIGHT,
+      Math.round(MUTE_BTN_Y * s),
+      Math.round(MUTE_BTN_WIDTH * s),
+      Math.round(MUTE_BTN_HEIGHT * s),
       0x1a1a3a,
       1,
     );
@@ -238,9 +235,9 @@ export class SettingsPanel {
     muteBtn.setInteractive({ useHandCursor: true });
     container.add(muteBtn);
 
-    const muteLabel = this.scene.add.text(0, MUTE_BTN_Y, "[ MUTE ]", {
+    const muteLabel = this.scene.add.text(0, Math.round(MUTE_BTN_Y * s), "[ MUTE ]", {
       fontFamily: "monospace",
-      fontSize: "14px",
+      fontSize: scaledFont(14, s),
       color: MUTE_LABEL_COLOR,
     });
     muteLabel.setOrigin(0.5);
@@ -261,9 +258,9 @@ export class SettingsPanel {
     });
 
     // ---------- Hint ----------
-    const hint = this.scene.add.text(0, PANEL_HEIGHT / 2 - 28, "Press ESC to close", {
+    const hint = this.scene.add.text(0, PANEL_HEIGHT / 2 - Math.round(28 * s), "Press ESC to close", {
       fontFamily: "monospace",
-      fontSize: "11px",
+      fontSize: scaledFont(11, s),
       color: "#888888",
     });
     hint.setOrigin(0.5);
@@ -310,15 +307,12 @@ export class SettingsPanel {
 
     const onMove = (p: Phaser.Input.Pointer): void => {
       if (!this.isDragging) return;
-      // Only react to the same pointer that initiated the drag — other
-      // pointers (e.g. a second finger) shouldn't move our knob.
       if (p.id !== dragId) return;
       this.applyPointerToVolume(p);
     };
     const onUp = (): void => {
       this.isDragging = false;
       this.detachDragHandlers();
-      // Flush the debounced save immediately so the final value lands.
       this.flushSave();
     };
 
@@ -346,9 +340,6 @@ export class SettingsPanel {
   }
 
   private applyPointerToVolume(pointer: Phaser.Input.Pointer): void {
-    // Convert the world-space pointer x to the panel's local coordinate
-    // system (Container origin is at centre, so we subtract the
-    // container's x).
     const localX = pointer.worldX - (this.container?.x ?? 0);
     const ratio = Phaser.Math.Clamp(
       (localX - this.trackX) / this.trackWidth,
@@ -370,17 +361,12 @@ export class SettingsPanel {
     const fillW = Math.round(this.trackWidth * volume);
     const knobX = this.trackX + fillW;
 
-    // Knob position.
     this.knob.setPosition(knobX, this.knob.y);
 
-    // Fill bar — anchored to the track's left edge; width grows to the
-    // right. Since the fill rectangle is positioned at its centre, we
-    // recompute both x and width.
     const fillCx = this.trackX + fillW / 2;
     this.trackFill.setPosition(fillCx, this.trackFill.y);
-    this.trackFill.setSize(Math.max(1, fillW), SLIDER_TRACK_HEIGHT);
+    this.trackFill.setSize(Math.max(1, fillW), Math.round(SLIDER_TRACK_HEIGHT * scaleFactor(this.scene.scale.width)));
 
-    // Percentage label.
     if (this.valueLabel) {
       this.valueLabel.setText(`${Math.round(volume * 100)}%`);
     }

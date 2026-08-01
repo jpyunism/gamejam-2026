@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { PowerUpOption } from "../systems/LevelUpManager";
+import { scaleFactor, scaledFont } from "../core/layout";
 
 /**
  * Modal power-up selection panel. Pauses the scene (caller's responsibility),
@@ -24,6 +25,7 @@ export class PowerUpSelect {
   ): Promise<PowerUpOption | null> {
     return new Promise((resolve) => {
       const { width, height } = scene.scale;
+      const s = scaleFactor(width);
       const container = scene.add.container(0, 0);
       container.setDepth(2000);
       container.setScrollFactor(0);
@@ -42,11 +44,11 @@ export class PowerUpSelect {
       // Title.
       const title = scene.add.text(
         width / 2,
-        height / 2 - 200,
+        height / 2 - Math.round(200 * s),
         `LEVEL ${level} — Pick a power-up`,
         {
           fontFamily: "monospace",
-          fontSize: "26px",
+          fontSize: scaledFont(26, s),
           color: "#00ffff",
           stroke: "#003344",
           strokeThickness: 3,
@@ -58,11 +60,11 @@ export class PowerUpSelect {
       // Hint.
       const hint = scene.add.text(
         width / 2,
-        height / 2 - 165,
+        height / 2 - Math.round(165 * s),
         "Press 1, 2 or 3 to choose",
         {
           fontFamily: "monospace",
-          fontSize: "12px",
+          fontSize: scaledFont(12, s),
           color: "#888888",
         },
       );
@@ -70,11 +72,11 @@ export class PowerUpSelect {
       hint.setScrollFactor(0);
 
       // Card geometry.
-      const cardW = 420;
-      const cardH = 90;
-      const cardGap = 18;
+      const cardW = Math.round(420 * s);
+      const cardH = Math.round(90 * s);
+      const cardGap = Math.round(18 * s);
       const totalH = choices.length * cardH + (choices.length - 1) * cardGap;
-      const top = height / 2 - totalH / 2 + 20;
+      const top = height / 2 - totalH / 2 + Math.round(20 * s);
       const left = width / 2 - cardW / 2;
 
       const palette = [0x00ffff, 0xff00ff, 0xffd700];
@@ -100,21 +102,21 @@ export class PowerUpSelect {
         border.strokeRect(left, y, cardW, cardH);
         border.setScrollFactor(0);
 
-        const keyLabel = scene.add.text(left + 16, y + cardH / 2, `[${i + 1}]`, {
+        const keyLabel = scene.add.text(left + Math.round(16 * s), y + cardH / 2, `[${i + 1}]`, {
           fontFamily: "monospace",
-          fontSize: "22px",
+          fontSize: scaledFont(22, s),
           color: "#" + accent.toString(16).padStart(6, "0"),
         });
         keyLabel.setOrigin(0, 0.5);
         keyLabel.setScrollFactor(0);
 
         const nameLabel = scene.add.text(
-          left + 80,
-          y + 28,
+          left + Math.round(80 * s),
+          y + Math.round(28 * s),
           choice.name,
           {
             fontFamily: "monospace",
-            fontSize: "18px",
+            fontSize: scaledFont(18, s),
             color: "#ffffff",
           },
         );
@@ -122,12 +124,12 @@ export class PowerUpSelect {
         nameLabel.setScrollFactor(0);
 
         const descLabel = scene.add.text(
-          left + 80,
-          y + 58,
+          left + Math.round(80 * s),
+          y + Math.round(58 * s),
           choice.description,
           {
             fontFamily: "monospace",
-            fontSize: "12px",
+            fontSize: scaledFont(12, s),
             color: "#aaaaaa",
           },
         );

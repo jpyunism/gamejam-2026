@@ -1,5 +1,8 @@
 import Phaser from "phaser";
 import { MetaProgress } from "../store/MetaProgress";
+import { scaleFactor, scaledFont } from "../core/layout";
+import { MobileBootstrap } from "../systems/MobileBootstrap";
+import { RotateOverlay } from "../systems/RotateOverlay";
 
 interface GameOverData {
   runCoins?: number;
@@ -41,6 +44,14 @@ export class GameOverScene extends Phaser.Scene {
   private keydownMHandler!: (event: KeyboardEvent) => void;
   private keydownSHandler!: (event: KeyboardEvent) => void;
 
+  /** Mobile bootstrap (fullscreen latch, orientation lock). */
+  private mobileBootstrap: MobileBootstrap | null = null;
+  /** Rotate overlay for portrait orientation. */
+  private rotateOverlay: RotateOverlay | null = null;
+
+  /** Resize handler reference for cleanup. */
+  private resizeHandler: ((gameSize: Phaser.Structs.Size) => void) | null = null;
+
   constructor() {
     super("GameOverScene");
   }
@@ -59,37 +70,58 @@ export class GameOverScene extends Phaser.Scene {
     // moment this scene comes up.
     this.sound.stopAll();
 
+    this.buildLayout(width, height);
+    this.bindInput();
+
+    // Mobile bootstrap + rotate overlay
+    this.mobileBootstrap = new MobileBootstrap(this);
+    this.rotateOverlay = new RotateOverlay(this);
+
+    // Subscribe to resize events
+    this.resizeHandler = (gameSize: Phaser.Structs.Size) => {
+      this.buildLayout(gameSize.width, gameSize.height);
+    };
+    this.scale.on("resize", this.resizeHandler);
+  }
+
+  private buildLayout(width: number, height: number): void {
+    const s = scaleFactor(width);
+
+    // Clear existing elements
+    this.children.removeAll(true);
+    this.coinsLabel = null;
+
     // Title
     const title = this.add
-      .text(width / 2, 100, "GAME OVER", {
+      .text(width / 2, Math.round(100 * s), "GAME OVER", {
         fontFamily: "monospace",
-        fontSize: "56px",
+        fontSize: scaledFont(56, s),
         color: "#ff00ff",
       })
       .setOrigin(0.5);
-    title.setShadow(0, 0, "#ff00ff", 18, true, true);
+    title.setShadow(0, 0, "#ff00ff", Math.round(18 * s), true, true);
 
     // Run summary
     this.add
-      .text(width / 2, 200, `Wave reached: ${this.waveReached}`, {
+      .text(width / 2, Math.round(200 * s), `Wave reached: ${this.waveReached}`, {
         fontFamily: "monospace",
-        fontSize: "20px",
+        fontSize: scaledFont(20, s),
         color: "#ffffff",
       })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, 232, `Level reached: ${this.levelReached}`, {
+      .text(width / 2, Math.round(232 * s), `Level reached: ${this.levelReached}`, {
         fontFamily: "monospace",
-        fontSize: "20px",
+        fontSize: scaledFont(20, s),
         color: "#ffffff",
       })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, 264, `Coins this run: ${this.runCoins}`, {
+      .text(width / 2, Math.round(264 * s), `Coins this run: ${this.runCoins}`, {
         fontFamily: "monospace",
-        fontSize: "20px",
+        fontSize: scaledFont(20, s),
         color: "#ffd700",
       })
       .setOrigin(0.5);
@@ -98,11 +130,11 @@ export class GameOverScene extends Phaser.Scene {
     this.coinsLabel = this.add
       .text(
         width / 2,
-        296,
+        Math.round(296 * s),
         `Total coins: ${MetaProgress.load().coins}`,
         {
           fontFamily: "monospace",
-          fontSize: "18px",
+          fontSize: scaledFont(18, s),
           color: "#ffd700",
         },
       )
@@ -111,37 +143,38 @@ export class GameOverScene extends Phaser.Scene {
     // Instructions
     const hintStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: "monospace",
-      fontSize: "16px",
+      fontSize: scaledFont(16, s),
       color: "#00ffff",
       align: "center",
     };
 
     this.add
-      .text(width / 2, 360, "[R] Restart", hintStyle)
+      .text(width / 2, Math.round(360 * s), "[R] Restart", hintStyle)
       .setOrigin(0.5);
     this.add
-      .text(width / 2, 388, "[M] Menu", hintStyle)
+      .text(width / 2, Math.round(388 * s), "[M] Menu", hintStyle)
       .setOrigin(0.5);
     this.add
-      .text(width / 2, 416, "[S] Shop", hintStyle)
+      .text(width / 2, Math.round(416 * s), "[S] Shop", hintStyle)
       .setOrigin(0.5);
 
     // Bottom hint
     this.add
       .text(
         width / 2,
-        height - 40,
+        height - Math.round(40 * s),
         "Tip: spend coins in the shop to make future runs easier.",
         {
           fontFamily: "monospace",
-          fontSize: "12px",
+          fontSize: scaledFont(12, s),
           color: "#888888",
           align: "center",
         },
       )
       .setOrigin(0.5);
+  }
 
-    // Input — main menu
+  private bindInput(): void {
     this.keydownRHandler = (): void => {
       this.scene.start("GameScene");
     };
@@ -164,6 +197,12 @@ export class GameOverScene extends Phaser.Scene {
     this.input.keyboard?.off("keydown-M", this.keydownMHandler);
     this.input.keyboard?.off("keydown-S", this.keydownSHandler);
     this.closeShop();
+    this.mobileBootstrap?.destroy();
+    this.rotateOverlay?.destroy();
+    if (this.resizeHandler) {
+      this.scale.off("resize", this.resizeHandler);
+      this.resizeHandler = null;
+    }
   }
 
   private toggleShop(): void {
@@ -181,16 +220,17 @@ export class GameOverScene extends Phaser.Scene {
     this.isShopOpen = true;
 
     const { width, height } = this.scale;
+    const s = scaleFactor(width);
 
-    const panel = this.add.container(width / 2, height / 2 + 20);
-    const bg = this.add.rectangle(0, 0, 520, 360, 0x10102a, 0.92);
+    const panel = this.add.container(width / 2, height / 2 + Math.round(20 * s));
+    const bg = this.add.rectangle(0, 0, Math.round(520 * s), Math.round(360 * s), 0x10102a, 0.92);
     bg.setStrokeStyle(2, 0x00ffff, 1);
     panel.add(bg);
 
     const header = this.add
-      .text(0, -150, "SHOP — spend coins on permanent upgrades", {
+      .text(0, Math.round(-150 * s), "SHOP — spend coins on permanent upgrades", {
         fontFamily: "monospace",
-        fontSize: "16px",
+        fontSize: scaledFont(16, s),
         color: "#00ffff",
         align: "center",
       })
@@ -200,14 +240,14 @@ export class GameOverScene extends Phaser.Scene {
     const data = MetaProgress.load();
     const lineStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: "monospace",
-      fontSize: "14px",
+      fontSize: scaledFont(14, s),
       color: "#ffffff",
       align: "center",
     };
 
     const labels: UpgradeKey[] = ["damage", "speed", "shield", "regen", "cadence"];
-    const yStart = -110;
-    const yStep = 38;
+    const yStart = Math.round(-110 * s);
+    const yStep = Math.round(38 * s);
     const lines: Partial<ShopLineRefs> = {};
 
     for (let i = 0; i < labels.length; i++) {
@@ -232,9 +272,9 @@ export class GameOverScene extends Phaser.Scene {
     }
 
     const status = this.add
-      .text(0, 110, "Press 1-5 to buy — ESC to close", {
+      .text(0, Math.round(110 * s), "Press 1-5 to buy — ESC to close", {
         fontFamily: "monospace",
-        fontSize: "12px",
+        fontSize: scaledFont(12, s),
         color: "#888888",
       })
       .setOrigin(0.5);

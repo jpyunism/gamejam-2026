@@ -40,6 +40,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     delta: number,
     cursors: MovementKeys,
     pointer: Phaser.Input.Pointer,
+    aimVec?: { x: number; y: number } | null,
   ): void {
     if (!this.isAlive) {
       return;
@@ -71,13 +72,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(vx * this.speed, vy * this.speed);
 
-    // Calculate aim angle from pointer position (world coords)
-    this.aimAngle = Phaser.Math.Angle.Between(
-      this.x,
-      this.y,
-      pointer.worldX,
-      pointer.worldY,
-    );
+    // Calculate aim angle:
+    // - If aimVec is provided (mobile joystick), use it
+    // - Otherwise fall back to pointer world position (desktop mouse)
+    if (aimVec && (aimVec.x !== 0 || aimVec.y !== 0)) {
+      this.aimAngle = Math.atan2(aimVec.y, aimVec.x);
+    } else {
+      this.aimAngle = Phaser.Math.Angle.Between(
+        this.x,
+        this.y,
+        pointer.worldX,
+        pointer.worldY,
+      );
+    }
     this.rotation = this.aimAngle;
 
     // Shield regeneration

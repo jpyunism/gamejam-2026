@@ -16,6 +16,9 @@ import { AudioManager } from "../audio/AudioManager";
 import { SettingsPanel } from "../ui/SettingsPanel";
 import { EventBus, SPECTACLE_ENTRANCE, SPECTACLE_ACTION, SPECTACLE_HIT } from "../core/EventBus";
 import { VirtualJoystick } from "../systems/VirtualJoystick";
+import { FireButton } from "../systems/FireButton";
+import { MobileBootstrap } from "../systems/MobileBootstrap";
+import { RotateOverlay } from "../systems/RotateOverlay";
 
 /** Battle-track pool. Keys are mirrored in the preload() loader below. */
 const BATTLE_TRACK_KEYS = [
@@ -46,8 +49,16 @@ export class GameScene extends Phaser.Scene {
   private audio!: AudioManager;
   /** Settings overlay. Created lazily on first pause. */
   private settingsPanel: SettingsPanel | null = null;
-  /** Virtual joystick for mobile input. */
-  private joystick: VirtualJoystick | null = null;
+  /** Virtual joystick for mobile movement (left side). */
+  private moveJoystick: VirtualJoystick | null = null;
+  /** Virtual joystick for mobile aim (right side). */
+  private aimJoystick: VirtualJoystick | null = null;
+  /** Fire button for mobile. */
+  private fireButton: FireButton | null = null;
+  /** Mobile bootstrap (fullscreen latch, orientation lock). */
+  private mobileBootstrap: MobileBootstrap | null = null;
+  /** Rotate overlay for portrait orientation. */
+  private rotateOverlay: RotateOverlay | null = null;
   /**
    * Weapon IDs chosen by the player in MenuScene. Defaults to Plasma + Pulse
    * if MenuScene didn't pass any (e.g. restart from GameOverScene with no
@@ -64,6 +75,9 @@ export class GameScene extends Phaser.Scene {
   /** Track keyboard handlers for cleanup in shutdown(). */
   private keydownQHandler!: (event: KeyboardEvent) => void;
   private keydownEscHandler!: (event: KeyboardEvent) => void;
+
+  /** Resize handler reference for cleanup. */
+  private resizeHandler: ((gameSize: Phaser.Structs.Size) => void) | null = null;
 
   constructor() {
     super("GameScene");
@@ -257,8 +271,12 @@ export class GameScene extends Phaser.Scene {
     };
     this.input.keyboard!.on("keydown-ESC", this.keydownEscHandler);
 
-    // Virtual joystick for mobile (auto-hides on desktop)
-    this.joystick = new VirtualJoystick(this, 120, height - 120, 50);
+    // Mobile controls
+    this.moveJoystick = new VirtualJoystick(this, 120, height - 120, 50, { side: "left" });
+    this.aimJoystick = new VirtualJoystick(this, width - 120, height - 120, 50, { side: "right" });
+    this.fireButton = new FireButton(this, width - 60, height - 200, 40);
+    this.mobileBootstrap = new MobileBootstrap(this);
+    this.rotateOverlay = new RotateOverlay(this);
 
     // HUD (replaces the old debug text labels).
     this.hud = new HUD(this);
@@ -266,6 +284,21 @@ export class GameScene extends Phaser.Scene {
 
     // Spectacle: entrance — player and enemies are now in the arena
     EventBus.emit(SPECTACLE_ENTRANCE, { x: this.player.x, y: this.player.y });
+
+    // Subscribe to resize events
+    this.resizeHandler = (gameSize: Phaser.Structs.Size) => {
+      this.handleResize(gameSize.width, gameSize.height);
+    };
+    this.scale.on("resize", this.resizeHandler);
+  }
+
+  /**
+   * Reposition mobile controls when the canvas resizes.
+   */
+  private handleResize(w: number, h: number): void {
+    this.moveJoystick?.setPosition(120, h - 120);
+    this.aimJoystick?.setPosition(w - 120, h - 120);
+    this.fireButton?.setPosition(w - 60, h - 200);
   }
 
   shutdown(): void {
@@ -278,6 +311,15 @@ export class GameScene extends Phaser.Scene {
     this.settingsPanel?.destroy();
     this.settingsPanel = null;
     this.hud?.destroy();
+    this.moveJoystick?.destroy();
+    this.aimJoystick?.destroy();
+    this.fireButton?.destroy();
+    this.mobileBootstrap?.destroy();
+    this.rotateOverlay?.destroy();
+    if (this.resizeHandler) {
+      this.scale.off("resize", this.resizeHandler);
+      this.resizeHandler = null;
+    }
     // Clean up persistent electric beam graphics
     const beamGfx = this.data.get("electricBeamGraphics") as Phaser.GameObjects.Graphics | undefined;
     if (beamGfx) {
@@ -613,16 +655,22 @@ export class GameScene extends Phaser.Scene {
       right: this.keyD.isDown,
     };
 
-    // Merge virtual joystick input for mobile
-    if (this.joystick && this.joystick.isActive()) {
-      const dir = this.joystick.getDirection();
+    // Merge virtual joystick input for mobile movement
+    if (this.moveJoystick && this.moveJoystick.isActive()) {
+      const dir = this.moveJoystick.getDirection();
       this.cursors.left = dir.x < -0.2;
       this.cursors.right = dir.x > 0.2;
       this.cursors.up = dir.y < -0.2;
       this.cursors.down = dir.y > 0.2;
     }
 
-    this.player.update(time, delta, this.cursors, this.input.activePointer);
+    // Get aim vector from right joystick (mobile) or null (desktop mouse)
+    let aimVec: { x: number; y: number } | null = null;
+    if (this.aimJoystick && this.aimJoystick.isActive()) {
+      aimVec = this.aimJoystick.getDirection();
+    }
+
+    this.player.update(time, delta, this.cursors, this.input.activePointer, aimVec);
 
     // Keep the player glow anchored to the player (the tween handles alpha
     // and scale, we only need to follow position).
@@ -652,7 +700,10 @@ export class GameScene extends Phaser.Scene {
       beamGfx.clear();
     }
 
-    if (this.input.activePointer.isDown) {
+    // Fire: use fireButton on mobile, fall back to pointer click on desktop
+    if (this.fireButton && this.fireButton.consumePressed()) {
+      this.player.tryFire(time);
+    } else if (this.input.activePointer.isDown) {
       this.player.tryFire(time);
     }
 

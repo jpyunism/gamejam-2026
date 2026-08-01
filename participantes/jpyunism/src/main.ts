@@ -14,8 +14,14 @@ const config: Phaser.Types.Core.GameConfig = {
   roundPixels: true,
   scene: [MenuScene, GameScene, GameOverScene],
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: Phaser.Scale.RESIZE,
+    width: "100%",
+    height: "100%",
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    expandParent: true,
+  },
+  input: {
+    activePointers: 4,
   },
   physics: {
     default: "arcade",

@@ -10,6 +10,14 @@ export const GAME = {
   BG_COLOR: "#0a0a0f",
 } as const;
 
+// ─── Responsive Layout ─────────────────────────────────────────────────
+export const LAYOUT = {
+  BASELINE_W: 1280,
+  BASELINE_H: 960,
+  MIN_SCALE: 0.45,
+  FONT_MIN_PX: 8,
+} as const;
+
 // ─── Player ────────────────────────────────────────────────────────────
 export const PLAYER = {
   HP: 100,

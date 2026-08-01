@@ -2,6 +2,9 @@ import Phaser from "phaser";
 import { MetaProgress } from "../store/MetaProgress";
 import { AudioManager } from "../audio/AudioManager";
 import { SettingsPanel } from "../ui/SettingsPanel";
+import { scaleFactor, scaledFont } from "../core/layout";
+import { MobileBootstrap } from "../systems/MobileBootstrap";
+import { RotateOverlay } from "../systems/RotateOverlay";
 
 /**
  * Catalog of weapons the player can pick from in the menu. Keep the IDs in
@@ -78,6 +81,14 @@ export class MenuScene extends Phaser.Scene {
   private keydownEnterHandler!: (event: KeyboardEvent) => void;
   private keydownEscHandler!: (event: KeyboardEvent) => void;
 
+  /** Mobile bootstrap (fullscreen latch, orientation lock). */
+  private mobileBootstrap: MobileBootstrap | null = null;
+  /** Rotate overlay for portrait orientation. */
+  private rotateOverlay: RotateOverlay | null = null;
+
+  /** Resize handler reference for cleanup. */
+  private resizeHandler: ((gameSize: Phaser.Structs.Size) => void) | null = null;
+
   constructor() {
     super("MenuScene");
   }
@@ -102,20 +113,40 @@ export class MenuScene extends Phaser.Scene {
     this.audio = new AudioManager(this);
     this.audio.play("menu-music", { loop: true, fadeInMs: 1000 });
 
-    this.drawTitle(width, height);
-    this.drawWeaponRow(width, height);
-    this.drawInstruction(width, height);
-    this.drawStartHint(width, height);
-    this.drawTotalCoins(width, height);
-    this.drawSettingsButton(width, height);
+    this.buildLayout(width, height);
     this.bindInput();
+
+    // Mobile bootstrap + rotate overlay
+    this.mobileBootstrap = new MobileBootstrap(this);
+    this.rotateOverlay = new RotateOverlay(this);
+
+    // Subscribe to resize events
+    this.resizeHandler = (gameSize: Phaser.Structs.Size) => {
+      this.buildLayout(gameSize.width, gameSize.height);
+    };
+    this.scale.on("resize", this.resizeHandler);
   }
 
-  private drawSettingsButton(width: number, height: number): void {
+  private buildLayout(width: number, height: number): void {
+    const s = scaleFactor(width);
+
+    // Clear existing elements
+    this.children.removeAll(true);
+    this.cardsByWeaponId.clear();
+
+    this.drawTitle(width, height, s);
+    this.drawWeaponRow(width, height, s);
+    this.drawInstruction(width, height, s);
+    this.drawStartHint(width, height, s);
+    this.drawTotalCoins(width, height, s);
+    this.drawSettingsButton(width, height, s);
+  }
+
+  private drawSettingsButton(width: number, height: number, s: number): void {
     const btn = this.add
-      .text(width - 90, height - 30, "[ SETTINGS ]", {
+      .text(width - Math.round(90 * s), height - Math.round(30 * s), "[ SETTINGS ]", {
         fontFamily: "monospace",
-        fontSize: "14px",
+        fontSize: scaledFont(14, s),
         color: "#00ffff",
       })
       .setOrigin(0.5)
@@ -142,10 +173,10 @@ export class MenuScene extends Phaser.Scene {
     }
   }
 
-  private drawTitle(width: number, height: number): void {
+  private drawTitle(width: number, height: number, s: number): void {
     const titleStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: "monospace",
-      fontSize: "44px",
+      fontSize: scaledFont(44, s),
       color: "#00ffff",
       align: "center",
     };
@@ -154,16 +185,16 @@ export class MenuScene extends Phaser.Scene {
       .text(width / 2, height * 0.18, "NEON DRIFT", titleStyle)
       .setOrigin(0.5);
 
-    title.setShadow(0, 0, "#00ffff", 16, true, true);
+    title.setShadow(0, 0, "#00ffff", Math.round(16 * s), true, true);
 
     this.add
       .text(
         width / 2,
-        height * 0.18 + 32,
+        height * 0.18 + Math.round(32 * s),
         "SELECT 2 WEAPONS",
         {
           fontFamily: "monospace",
-          fontSize: "14px",
+          fontSize: scaledFont(14, s),
           color: "#ff00ff",
           align: "center",
         },
@@ -171,18 +202,21 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
   }
 
-  private drawWeaponRow(width: number, height: number): void {
+  private drawWeaponRow(width: number, height: number, s: number): void {
+    const cardW = Math.round(CARD_WIDTH * s);
+    const cardGap = Math.round(CARD_GAP * s);
+
     // Total span of the row so we can center the cards as a group.
     const totalWidth =
-      WEAPON_CATALOG.length * CARD_WIDTH +
-      (WEAPON_CATALOG.length - 1) * CARD_GAP;
-    const startX = width / 2 - totalWidth / 2 + CARD_WIDTH / 2;
+      WEAPON_CATALOG.length * cardW +
+      (WEAPON_CATALOG.length - 1) * cardGap;
+    const startX = width / 2 - totalWidth / 2 + cardW / 2;
     const rowY = height * 0.55;
 
     for (let i = 0; i < WEAPON_CATALOG.length; i++) {
       const data = WEAPON_CATALOG[i];
-      const x = startX + i * (CARD_WIDTH + CARD_GAP);
-      const refs = this.createWeaponCard(x, rowY, data);
+      const x = startX + i * (cardW + cardGap);
+      const refs = this.createWeaponCard(x, rowY, data, s);
       this.cardsByWeaponId.set(data.id, refs);
     }
   }
@@ -191,10 +225,14 @@ export class MenuScene extends Phaser.Scene {
     x: number,
     y: number,
     data: WeaponCardData,
+    s: number,
   ): WeaponCardRefs {
+    const cardW = Math.round(CARD_WIDTH * s);
+    const cardH = Math.round(CARD_HEIGHT * s);
+
     // Hit area is the full card — clicking anywhere inside toggles the card.
     const hit = this.add
-      .rectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_BG_COLOR, 0.9)
+      .rectangle(x, y, cardW, cardH, CARD_BG_COLOR, 0.9)
       .setStrokeStyle(2, CARD_BORDER_COLOR_DEFAULT, 1)
       .setInteractive({ useHandCursor: true });
 
@@ -202,37 +240,37 @@ export class MenuScene extends Phaser.Scene {
     hit.setOrigin(0.5);
 
     const nameText = this.add
-      .text(x, y - 50, data.name, {
+      .text(x, y - Math.round(50 * s), data.name, {
         fontFamily: "monospace",
-        fontSize: "18px",
+        fontSize: scaledFont(18, s),
         color: CARD_TEXT_NAME,
         align: "center",
       })
       .setOrigin(0.5);
 
     const damageText = this.add
-      .text(x, y - 20, `DMG ${data.damage}`, {
+      .text(x, y - Math.round(20 * s), `DMG ${data.damage}`, {
         fontFamily: "monospace",
-        fontSize: "13px",
+        fontSize: scaledFont(13, s),
         color: CARD_TEXT_DAMAGE,
         align: "center",
       })
       .setOrigin(0.5);
 
     const descText = this.add
-      .text(x, y + 18, data.description, {
+      .text(x, y + Math.round(18 * s), data.description, {
         fontFamily: "monospace",
-        fontSize: "11px",
+        fontSize: scaledFont(11, s),
         color: CARD_TEXT_DESC,
         align: "center",
-        wordWrap: { width: CARD_WIDTH - 16 },
+        wordWrap: { width: cardW - Math.round(16 * s) },
       })
       .setOrigin(0.5);
 
     const idLabel = this.add
-      .text(x, y + 56, data.id, {
+      .text(x, y + Math.round(56 * s), data.id, {
         fontFamily: "monospace",
-        fontSize: "9px",
+        fontSize: scaledFont(9, s),
         color: CARD_TEXT_DIM,
         align: "center",
       })
@@ -255,11 +293,11 @@ export class MenuScene extends Phaser.Scene {
     return { hit, nameText, damageText, descText, idLabel };
   }
 
-  private drawInstruction(width: number, height: number): void {
+  private drawInstruction(width: number, height: number, s: number): void {
     this.instructionText = this.add
       .text(width / 2, height * 0.78, "", {
         fontFamily: "monospace",
-        fontSize: "14px",
+        fontSize: scaledFont(14, s),
         color: "#ffaa00",
         align: "center",
       })
@@ -268,26 +306,26 @@ export class MenuScene extends Phaser.Scene {
     this.refreshInstruction();
   }
 
-  private drawStartHint(width: number, height: number): void {
+  private drawStartHint(width: number, height: number, s: number): void {
     this.startHint = this.add
       .text(width / 2, height * 0.85, "", {
         fontFamily: "monospace",
-        fontSize: "20px",
+        fontSize: scaledFont(20, s),
         color: "#ff00ff",
         align: "center",
       })
       .setOrigin(0.5);
 
-    this.startHint.setShadow(0, 0, "#ff00ff", 8, true, true);
+    this.startHint.setShadow(0, 0, "#ff00ff", Math.round(8 * s), true, true);
     this.refreshStartHint();
   }
 
-  private drawTotalCoins(width: number, height: number): void {
+  private drawTotalCoins(width: number, height: number, s: number): void {
     const totalCoins = MetaProgress.load().coins;
     this.add
-      .text(width / 2, height - 40, `Total coins: ${totalCoins}`, {
+      .text(width / 2, height - Math.round(40 * s), `Total coins: ${totalCoins}`, {
         fontFamily: "monospace",
-        fontSize: "14px",
+        fontSize: scaledFont(14, s),
         color: "#ffd700",
         align: "center",
       })
@@ -314,6 +352,12 @@ export class MenuScene extends Phaser.Scene {
     this.audio?.destroy();
     this.settingsPanel?.destroy();
     this.settingsPanel = null;
+    this.mobileBootstrap?.destroy();
+    this.rotateOverlay?.destroy();
+    if (this.resizeHandler) {
+      this.scale.off("resize", this.resizeHandler);
+      this.resizeHandler = null;
+    }
   }
 
   private toggleWeapon(id: string): void {

@@ -3,6 +3,7 @@ import { Player } from "../entities/Player";
 import { Weapon } from "../weapons/Weapon";
 import { WaveManager } from "../systems/WaveManager";
 import { LevelUpManager } from "../systems/LevelUpManager";
+import { scaleFactor, scaledFont } from "../core/layout";
 
 /**
  * A simple horizontal bar (background + fill) with a label on top. Owns its
@@ -235,6 +236,7 @@ class WeaponSlot {
  * allocations) to keep the HUD cheap.
  */
 export class HUD {
+  private scene: Phaser.Scene;
   private leftPanel!: Phaser.GameObjects.Graphics;
   private hpBar!: Bar;
   private shieldBar!: Bar;
@@ -266,20 +268,58 @@ export class HUD {
   /** Mute toggle button. */
   private muteBtn!: Phaser.GameObjects.Text;
 
+  /** Resize handler reference for cleanup. */
+  private resizeHandler: ((gameSize: Phaser.Structs.Size) => void) | null = null;
+
   constructor(scene: Phaser.Scene) {
-    const { width, height } = scene.scale;
+    this.scene = scene;
+    this.buildLayout(scene.scale.width, scene.scale.height);
+
+    // Subscribe to resize events
+    this.resizeHandler = (gameSize: Phaser.Structs.Size) => {
+      this.buildLayout(gameSize.width, gameSize.height);
+    };
+    scene.scale.on("resize", this.resizeHandler);
+  }
+
+  /**
+   * Rebuilds all HUD elements for the given dimensions.
+   * Called on construction and on every scale.resize event.
+   */
+  private buildLayout(width: number, height: number): void {
+    const s = scaleFactor(width);
+
+    // Destroy existing elements if this is a rebuild
+    if (this.leftPanel) {
+      this.leftPanel.destroy();
+      this.hpBar.destroy();
+      this.shieldBar.destroy();
+      this.coinsLabel.destroy();
+      this.rightPanel.destroy();
+      this.waveLabel.destroy();
+      this.levelLabel.destroy();
+      this.killsLabel.destroy();
+      this.xpBar.destroy();
+      this.weaponPanel.destroy();
+      for (const slot of this.weaponSlots) {
+        slot.destroy();
+      }
+      this.weaponSlots = [];
+      this.muteBtn.destroy();
+    }
 
     // ---------- Top-left HP + Shield ----------
-    const PANEL_X = 10;
-    const PANEL_Y = 10;
-    const PANEL_W = 200;
-    const PANEL_H = 70;
-    const BAR_X = PANEL_X + 10;
-    const BAR_W = PANEL_W - 20;
-    const HP_BAR_Y = PANEL_Y + 22;
-    const SHIELD_BAR_Y = PANEL_Y + 46;
+    const PANEL_X = Math.round(10 * s);
+    const PANEL_Y = Math.round(10 * s);
+    const PANEL_W = Math.round(200 * s);
+    const PANEL_H = Math.round(70 * s);
+    const BAR_X = PANEL_X + Math.round(10 * s);
+    const BAR_W = PANEL_W - Math.round(20 * s);
+    const HP_BAR_Y = PANEL_Y + Math.round(22 * s);
+    const SHIELD_BAR_Y = PANEL_Y + Math.round(46 * s);
+    const BAR_HEIGHT = Math.max(6, Math.round(14 * s));
 
-    this.leftPanel = scene.add.graphics();
+    this.leftPanel = this.scene.add.graphics();
     this.leftPanel.fillStyle(0x000000, 0.55);
     this.leftPanel.fillRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
     this.leftPanel.lineStyle(1, 0x00ffff, 0.6);
@@ -288,11 +328,11 @@ export class HUD {
     this.leftPanel.setDepth(900);
 
     this.hpBar = new Bar(
-      scene,
+      this.scene,
       BAR_X,
       HP_BAR_Y,
       BAR_W,
-      14,
+      BAR_HEIGHT,
       0x220000,
       0xff3344,
       "HP 100/100",
@@ -300,11 +340,11 @@ export class HUD {
       901,
     );
     this.shieldBar = new Bar(
-      scene,
+      this.scene,
       BAR_X,
       SHIELD_BAR_Y,
       BAR_W,
-      14,
+      BAR_HEIGHT,
       0x001a33,
       0x44aaff,
       "SHIELD 50/50",
@@ -313,9 +353,9 @@ export class HUD {
     );
 
     // ---------- Top-center Coins ----------
-    this.coinsLabel = scene.add.text(width / 2, 14, "Coins: 0", {
+    this.coinsLabel = this.scene.add.text(width / 2, Math.round(14 * s), "Coins: 0", {
       fontFamily: "monospace",
-      fontSize: "14px",
+      fontSize: scaledFont(14, s),
       color: "#ffd700",
       stroke: "#553300",
       strokeThickness: 2,
@@ -325,12 +365,12 @@ export class HUD {
     this.coinsLabel.setDepth(903);
 
     // ---------- Top-right Wave / Level ----------
-    const RT_X = width - 190;
-    const RT_Y = 10;
-    const RT_W = 180;
-    const RT_H = 50;
+    const RT_W = Math.round(180 * s);
+    const RT_H = Math.round(50 * s);
+    const RT_X = width - RT_W - Math.round(10 * s);
+    const RT_Y = Math.round(10 * s);
 
-    this.rightPanel = scene.add.graphics();
+    this.rightPanel = this.scene.add.graphics();
     this.rightPanel.fillStyle(0x000000, 0.55);
     this.rightPanel.fillRect(RT_X, RT_Y, RT_W, RT_H);
     this.rightPanel.lineStyle(1, 0xff00ff, 0.6);
@@ -338,38 +378,38 @@ export class HUD {
     this.rightPanel.setScrollFactor(0);
     this.rightPanel.setDepth(900);
 
-    this.waveLabel = scene.add.text(RT_X + 8, RT_Y + 6, "Wave: 0", {
+    this.waveLabel = this.scene.add.text(RT_X + Math.round(8 * s), RT_Y + Math.round(6 * s), "Wave: 0", {
       fontFamily: "monospace",
-      fontSize: "12px",
+      fontSize: scaledFont(12, s),
       color: "#ff00ff",
     });
     this.waveLabel.setScrollFactor(0);
     this.waveLabel.setDepth(903);
 
-    this.levelLabel = scene.add.text(RT_X + 8, RT_Y + 22, "Level: 1", {
+    this.levelLabel = this.scene.add.text(RT_X + Math.round(8 * s), RT_Y + Math.round(22 * s), "Level: 1", {
       fontFamily: "monospace",
-      fontSize: "12px",
+      fontSize: scaledFont(12, s),
       color: "#00ffff",
     });
     this.levelLabel.setScrollFactor(0);
     this.levelLabel.setDepth(903);
 
-    this.killsLabel = scene.add.text(RT_X + RT_W - 8, RT_Y + 6, "0/10", {
+    this.killsLabel = this.scene.add.text(RT_X + RT_W - Math.round(8 * s), RT_Y + Math.round(6 * s), "0/10", {
       fontFamily: "monospace",
-      fontSize: "11px",
+      fontSize: scaledFont(11, s),
       color: "#cccccc",
     });
     this.killsLabel.setOrigin(1, 0);
     this.killsLabel.setScrollFactor(0);
     this.killsLabel.setDepth(903);
 
-    // XP bar — shows kills progress toward next level
+    // XP bar
     this.xpBar = new Bar(
-      scene,
-      RT_X + 8,
-      RT_Y + 38,
-      RT_W - 16,
-      6,
+      this.scene,
+      RT_X + Math.round(8 * s),
+      RT_Y + Math.round(38 * s),
+      RT_W - Math.round(16 * s),
+      Math.max(3, Math.round(6 * s)),
       0x222244,
       0x00ff66,
       "",
@@ -380,35 +420,35 @@ export class HUD {
     this.xpBar.fill.setScrollFactor(0);
 
     // ---------- Bottom weapon slots ----------
-    const SLOT_W = 100;
-    const SLOT_H = 40;
-    const SLOT_GAP = 10;
+    const SLOT_W = Math.round(100 * s);
+    const SLOT_H = Math.round(40 * s);
+    const SLOT_GAP = Math.round(10 * s);
     const SLOTS_TOTAL_W = SLOT_W * 2 + SLOT_GAP;
     const SLOTS_X = (width - SLOTS_TOTAL_W) / 2;
-    const SLOTS_Y = height - 50;
+    const SLOTS_Y = height - Math.round(50 * s);
 
-    this.weaponPanel = scene.add.graphics();
+    this.weaponPanel = this.scene.add.graphics();
     this.weaponPanel.fillStyle(0x000000, 0.4);
     this.weaponPanel.fillRect(
-      SLOTS_X - 6,
-      SLOTS_Y - 6,
-      SLOTS_TOTAL_W + 12,
-      SLOT_H + 12,
+      SLOTS_X - Math.round(6 * s),
+      SLOTS_Y - Math.round(6 * s),
+      SLOTS_TOTAL_W + Math.round(12 * s),
+      SLOT_H + Math.round(12 * s),
     );
     this.weaponPanel.setScrollFactor(0);
     this.weaponPanel.setDepth(900);
 
     for (let i = 0; i < 2; i++) {
       const slotX = SLOTS_X + i * (SLOT_W + SLOT_GAP);
-      const slot = new WeaponSlot(scene, slotX, SLOTS_Y, SLOT_W, SLOT_H, i);
+      const slot = new WeaponSlot(this.scene, slotX, SLOTS_Y, SLOT_W, SLOT_H, i);
       this.weaponSlots.push(slot);
     }
 
     // ── Mute toggle (top-right corner, above wave panel) ──
-    this.muteBtn = scene.add
-      .text(width - 10, RT_Y, scene.sound.mute ? "[UNMUTE]" : "[MUTE]", {
+    this.muteBtn = this.scene.add
+      .text(width - Math.round(10 * s), RT_Y, this.scene.sound.mute ? "[UNMUTE]" : "[MUTE]", {
         fontFamily: "monospace",
-        fontSize: "11px",
+        fontSize: scaledFont(11, s),
         color: "#888888",
       })
       .setOrigin(1, 0)
@@ -416,8 +456,8 @@ export class HUD {
       .setDepth(903)
       .setInteractive({ useHandCursor: true });
     this.muteBtn.on("pointerdown", () => {
-      scene.sound.mute = !scene.sound.mute;
-      this.muteBtn.setText(scene.sound.mute ? "[UNMUTE]" : "[MUTE]");
+      this.scene.sound.mute = !this.scene.sound.mute;
+      this.muteBtn.setText(this.scene.sound.mute ? "[UNMUTE]" : "[MUTE]");
     });
   }
 
@@ -500,19 +540,24 @@ export class HUD {
    * in case the caller wants it.
    */
   public destroy(): void {
-    this.leftPanel.destroy();
-    this.hpBar.destroy();
-    this.shieldBar.destroy();
-    this.coinsLabel.destroy();
-    this.rightPanel.destroy();
-    this.waveLabel.destroy();
-    this.levelLabel.destroy();
-    this.killsLabel.destroy();
-    this.xpBar.destroy();
-    this.weaponPanel.destroy();
+    if (this.resizeHandler) {
+      this.scene.scale.off("resize", this.resizeHandler);
+      this.resizeHandler = null;
+    }
+    this.leftPanel?.destroy();
+    this.hpBar?.destroy();
+    this.shieldBar?.destroy();
+    this.coinsLabel?.destroy();
+    this.rightPanel?.destroy();
+    this.waveLabel?.destroy();
+    this.levelLabel?.destroy();
+    this.killsLabel?.destroy();
+    this.xpBar?.destroy();
+    this.weaponPanel?.destroy();
     for (const slot of this.weaponSlots) {
       slot.destroy();
     }
     this.weaponSlots = [];
+    this.muteBtn?.destroy();
   }
 }

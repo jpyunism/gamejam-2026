@@ -98,7 +98,13 @@ export class AudioManager {
       this.stop();
 
       const startVolume = fadeInMs > 0 ? 0 : vol;
-      const sound = this.scene.sound.add(key, { loop, volume: startVolume }) as AnySound;
+      let sound: AnySound;
+      try {
+        sound = this.scene.sound.add(key, { loop, volume: startVolume }) as AnySound;
+      } catch (e) {
+        console.warn(`AudioManager: failed to decode "${key}" — skipping`, e);
+        return;
+      }
       sound.play();
       this.current = sound;
 

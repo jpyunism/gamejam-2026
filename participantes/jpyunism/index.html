@@ -52,7 +52,11 @@
   </head>
   <body>
     <div id="game"></div>
-    <div id="fs-prompt" class="visible">
+    <div id="fs-prompt" class="visible" onclick="(function(){
+      this.classList.remove('visible');
+      var c = document.querySelector('#game canvas');
+      if (c && c.requestFullscreen) c.requestFullscreen();
+    }.call(this))">
       <div>
         <p>NEON DRIFT</p>
         <p style="font-size:14px;color:#888888">Tap to play</p>

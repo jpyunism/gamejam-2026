@@ -5,24 +5,30 @@ slugs:
   engram_topic: "sdd/Implementa una version mobile friendly para jugar en el telefono desde un navegador."
   openspec_dir: "implementa-una-version-mobile-friendly-para-jugar-en-el-telefono-desde-un-navegador"
 archived_at: "2026-08-01"
-archive_status: "blocked-pending-review-receipt"
+archive_status: "succeeded"
 gates:
   task_completion_gate: "passed-with-reconciliation"
-  review_receipt_gate: "blocked"
-specs_synced: false
-folder_moved: false
+  review_receipt_gate: "passed"
+specs_synced: true
+folder_moved: true
 archive_report_persisted: true
+review:
+  lineage_id: "review-d5317a6f0bf0d289"
+  terminal_state: "approved"
+  receipt_path: ".git/gentle-ai/review-transactions/v2/review-d5317a6f0bf0d289/review-receipt.json"
+  commit: "08632bb feat(mobile): add responsive layout, dual touch controls, and mobile presentation"
 ```
 
 # Archive Report — Mobile-friendly phone browser support for Neon Drift
 
-## Status: BLOCKED — pending Native Review Receipt Gate
+## Status: SUCCEEDED — SDD cycle complete
 
-This change has NOT been fully archived. The implementation is complete and
-verified, but the SDD cycle cannot close until the review-driven gate is
-satisfied. This report records the FINAL STATE of the change at close and
-the remaining steps required to complete the archive (spec sync + folder
-move).
+Both gates are satisfied and the change has been fully archived:
+- All 3 delta specs copied into `openspec/specs/{domain}/spec.md` (NEW
+  capabilities — no merge required).
+- Change folder moved to
+  `openspec/changes/archive/2026-08-01-implementa-una-version-mobile-friendly-para-jugar-en-el-telefono-desde-un-navegador/`.
+- This report is the terminal audit record.
 
 ## Gates
 
@@ -32,45 +38,70 @@ Per `tasks.md`:
 
 - 25/26 tasks marked `[x]`.
 - Task 5.3 ("Commit per-PR (`feat(mobile):` prefix) — orchestrator
-  responsibility") is unchecked.
-- Orchestrator's final-state facts explicitly identify task 5.3 as a
+  responsibility") was unchecked.
+- Orchestrator's final-state facts identify task 5.3 as a
   post-implementation orchestrator task (commit step), NOT an
-  implementation task. `apply-progress` observation #48 and
-  `verify-report.md` both confirm all implementation work is complete.
-- This is an exceptional stale-checkbox case explicitly authorised by the
-  orchestrator: archive-time reconciliation accepted because
-  apply-progress and verify-report prove every unchecked task is complete
-  (or is a non-implementation orchestrator task).
+  implementation task.
+- The implementation work has since been committed as `08632bb feat(mobile):
+  add responsive layout, dual touch controls, and mobile presentation`,
+  satisfying the orchestrator's commit responsibility and finalising task
+  5.3.
 
-Reconciliation: mark task 5.3 as **reconciled — orchestrator
-post-implementation responsibility, not an implementation gap**. Recorded
-here so the archived audit trail does not show stale unchecked tasks for
-completed work.
+Reconciliation: mark task 5.3 as **complete — orchestrator commit landed
+in `08632bb`**. The archived audit trail no longer shows stale unchecked
+tasks for completed work.
 
-### Native Review Receipt Gate — BLOCKED
+### Native Review Receipt Gate — PASSED
 
-- Review mode: ON (decided by default).
-- Structured status with `reviewGate.result: allow` is REQUIRED before any
-  spec sync, task reconciliation finalisation, or archive move.
-- No review transaction exists yet.
-- No terminal receipt exists yet.
-- No post-apply gate context exists yet.
-- Per the orchestrator's launch prompt: the code is unstaged/uncommitted,
-  so no review could have run. The gate therefore blocks the full archive.
+- Review lineage: `review-d5317a6f0bf0d289`
+- `gentle-ai review finalize` completed: state approved
+- `gentle-ai review validate --gate post-apply`: result=allow, allowed=true
+- Terminal receipt:
+  - `terminal_state: approved`
+  - `risk_level: low`
+  - `fix_delta_hash: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+    (empty fix delta — no remediations required)
+  - `final_candidate_tree: 50740704d29ad658d42ac95dc41c836caf068d92`
+    (matches commit history base for the mobile-friendly work)
+- Receipt path:
+  `/Users/juanyunis/src/misc/gamejam-2026/.git/gentle-ai/review-transactions/v2/review-d5317a6f0bf0d289/review-receipt.json`
 
-Consequence: the change folder remains in
-`openspec/changes/implementa-una-version-mobile-friendly-para-jugar-en-el-telefono-desde-un-navegador/`
-(not yet moved to `openspec/changes/archive/2026-08-01-...`), and the
-delta specs in `openspec/changes/{change}/specs/` have NOT been merged
-into `openspec/specs/{domain}/spec.md`.
+## Specs Synced to Main Specs
 
-## Final State of the Change (per orchestrator final-state facts)
+All 3 capabilities are NEW — no existing `openspec/specs/{domain}/spec.md`
+existed, so each delta spec was copied directly:
+
+| Domain | Action | Destination |
+|--------|--------|-------------|
+| `mobile-touch-controls` | CREATE | `openspec/specs/mobile-touch-controls/spec.md` |
+| `responsive-layout` | CREATE | `openspec/specs/responsive-layout/spec.md` |
+| `mobile-presentation` | CREATE | `openspec/specs/mobile-presentation/spec.md` |
+
+## Archive Folder Contents
+
+```
+openspec/changes/archive/2026-08-01-implementa-una-version-mobile-friendly-para-jugar-en-el-telefono-desde-un-navegador/
+├── archive-report.md          (this file — terminal audit record)
+├── design.md
+├── exploration.md
+├── proposal.md
+├── specs/
+│   ├── mobile-presentation/spec.md
+│   ├── mobile-touch-controls/spec.md
+│   └── responsive-layout/spec.md
+├── tasks.md                  (25/26 [x], task 5.3 reconciled)
+└── verify-report.md
+```
+
+Active changes directory no longer contains this change.
+
+## Final State of the Change
 
 | Metric | Value |
 |--------|-------|
 | Total tasks | 26 |
 | Tasks complete (marked `[x]`) | 25 |
-| Tasks incomplete (reconciled, orchestrator-owned) | 1 (task 5.3) |
+| Tasks reconciled (orchestrator-owned, now complete) | 1 (task 5.3 — landed in `08632bb`) |
 | Spec requirements | 11 / 11 implemented |
 | Spec scenarios | 16 total (9 COMPLIANT, 7 PARTIAL per design's manual-QA scope) |
 | Capabilities | 3 (mobile-touch-controls, responsive-layout, mobile-presentation) |
@@ -82,12 +113,12 @@ into `openspec/specs/{domain}/spec.md`.
 | SUGGESTION findings | 2 (fullscreen/orientation delegated to manual device QA per design) |
 | Design coherence | Coherent — every architecture decision is honoured in code |
 | Implementation deviations from design | None |
+| Review verdict | **approved** (risk_level: low, lineage `review-d5317a6f0bf0d289`) |
+| Git commit | `08632bb feat(mobile): add responsive layout, dual touch controls, and mobile presentation` |
 
-## File Changes
+## File Changes (per `git diff --stat`)
 
-`git diff --stat` reports +494 / −229 lines across 13 modified + 6 new
-files. All changes are unstaged / uncommitted in
-`participantes/jpyunism/`.
+`+494 / −229` lines across 13 modified + 6 new files.
 
 ### New Files (6)
 
@@ -121,7 +152,6 @@ files. All changes are unstaged / uncommitted in
 ## Spec Compliance Summary
 
 11 / 11 requirements implemented and statically verifiable.
-
 9 / 16 scenarios have explicit Playwright test coverage (COMPLIANT).
 7 / 16 scenarios are PARTIAL — implementation correctness is
 static-verifiable but lacks explicit Playwright assertions because the
@@ -191,56 +221,23 @@ The following observation IDs document the change lifecycle:
 | `#47` | architecture | SDD tasks breakdown for mobile-friendly Neon Drift |
 | `#48` | architecture | SDD apply-progress: mobile-friendly Neon Drift |
 | `#49` | architecture | SDD verify-report: mobile-friendly Neon Drift — PASS |
-| `#50` (this report) | architecture | SDD archive-report: mobile-friendly Neon Drift — BLOCKED pending review receipt |
+| `#50` (initial blocked archive report) | architecture | SDD archive-report: mobile-friendly Neon Drift — BLOCKED pending review receipt |
+| This final archive-report | architecture | SDD archive-report: mobile-friendly Neon Drift — SUCCEEDED |
 
-## Delta Specs Awaiting Merge
-
-These specs live in the change folder but have NOT been synced to main
-specs (`openspec/specs/`). When the review gate is satisfied and a
-follow-up archive invocation completes the merge, the following delta
-specs must be applied:
-
-| Domain | Action | Notes |
-|--------|--------|-------|
-| `mobile-touch-controls` | CREATE in `openspec/specs/mobile-touch-controls/spec.md` | New capability (no existing main spec) |
-| `responsive-layout` | CREATE in `openspec/specs/responsive-layout/spec.md` | New capability (no existing main spec) |
-| `mobile-presentation` | CREATE in `openspec/specs/mobile-presentation/spec.md` | New capability (no existing main spec) |
-
-All three are NEW capabilities — no existing main specs to merge into.
-
-## What Remains (to complete archive)
-
-1. **Commit the changes** (`feat(mobile):` prefix, per task 5.3). 13
-   modified + 6 new files in `participantes/jpyunism/`.
-2. **Run `gentle-ai sdd-review`** (or equivalent native review) on the
-   commit. Review mode is ON by default.
-3. **Verify the terminal receipt** shows `reviewGate.result: allow`,
-   matches the final candidate tree, paths digest, policy, ledger, fix
-   delta, current independent verification evidence, mode counters, and
-   base relationship.
-4. **Re-invoke `sdd-archive`** (this sub-agent) with the approved
-   receipt. The retry will:
-   - Sync the three delta specs into `openspec/specs/{domain}/spec.md`.
-   - Move the change folder to
-     `openspec/changes/archive/2026-08-01-implementa-una-version-mobile-friendly-para-jugar-en-el-telefono-desde-un-navegador/`.
-   - Update this archive report with the final archived location and
-     receipt reference.
+Topic key for archive upsert:
+`sdd/Implementa una version mobile friendly para jugar en el telefono desde un navegador./archive-report`
 
 ## Risks
 
 | Severity | Description |
 |----------|-------------|
 | low | Manual-QA scenarios (7 PARTIAL) depend on physical device or DevTools emulator validation before public mobile release. Design document scopes this explicitly. |
-| low | 5.3 "Commit per-PR" task is open at archive time. Resolved per orchestrator instruction; no implementation gap. |
-| med | No review receipt yet — no native review has validated the implementation against the proposal. Block on review before any deployment to real mobile users. |
+| low | 5.3 "Commit per-PR" task is now resolved — implementation landed in commit `08632bb` with `feat(mobile):` prefix. No remaining implementation gaps. |
 
 ## Audit Trail
 
-This `archive-report.md` is the terminal record at the time the archive
-was attempted. It records the final state of the change (per the
-final-state-authority hierarchy, the orchestrator's launch-prompt facts
-outrank `apply-progress` / `verify-report` intermediate snapshots). When
-the review gate is satisfied and a follow-up archive invocation
-completes the merge + folder move, the archive folder itself becomes the
-permanent audit trail — this report and the change folder are not
-modified after the folder is moved.
+This `archive-report.md` is the terminal record at the time of archive
+close. The archive folder
+`openspec/changes/archive/2026-08-01-implementa-una-version-mobile-friendly-para-jugar-en-el-telefono-desde-un-navegador/`
+is now the permanent audit trail. Per SDD policy, archived changes are
+never modified after the folder is moved.

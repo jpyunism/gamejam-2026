@@ -317,6 +317,8 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.startHint.setShadow(0, 0, "#ff00ff", Math.round(8 * s), true, true);
+    this.startHint.setInteractive();
+    this.startHint.on("pointerdown", () => this.tryStartRun());
     this.refreshStartHint();
   }
 

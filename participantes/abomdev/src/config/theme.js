@@ -48,9 +48,9 @@ export const BAR = {
 };
 
 export const MINIMAP = {
-  bg: 0x111122,
-  bgAlpha: 0.7,
-  border: 0x444466,
+  bg: 0x000000,
+  bgAlpha: 0.55,
+  border: 0x66ffcc,
   player: 0x66ffcc,
   chest: 0xffcc44,
 };

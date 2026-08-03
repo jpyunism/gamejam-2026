@@ -9,6 +9,8 @@
 // para que el sprite y su cuerpo de físicas coincidan sin ajustes extra.
 
 import bugRaw from 'lucide-static/icons/bug.svg?raw';
+import chevronDownRaw from 'lucide-static/icons/chevron-down.svg?raw';
+import chevronUpRaw from 'lucide-static/icons/chevron-up.svg?raw';
 import circleDotRaw from 'lucide-static/icons/circle-dot.svg?raw';
 import crosshairRaw from 'lucide-static/icons/crosshair.svg?raw';
 import dropletRaw from 'lucide-static/icons/droplet.svg?raw';
@@ -21,11 +23,13 @@ import layersRaw from 'lucide-static/icons/layers.svg?raw';
 import magnetRaw from 'lucide-static/icons/magnet.svg?raw';
 import orbitRaw from 'lucide-static/icons/orbit.svg?raw';
 import packageRaw from 'lucide-static/icons/package.svg?raw';
+import pauseRaw from 'lucide-static/icons/pause.svg?raw';
 import ratRaw from 'lucide-static/icons/rat.svg?raw';
 import shieldRaw from 'lucide-static/icons/shield.svg?raw';
 import skullRaw from 'lucide-static/icons/skull.svg?raw';
 import swordsRaw from 'lucide-static/icons/swords.svg?raw';
 import timerRaw from 'lucide-static/icons/timer.svg?raw';
+import trophyRaw from 'lucide-static/icons/trophy.svg?raw';
 import wavesRaw from 'lucide-static/icons/waves.svg?raw';
 import windRaw from 'lucide-static/icons/wind.svg?raw';
 import zapRaw from 'lucide-static/icons/zap.svg?raw';
@@ -47,6 +51,7 @@ const ICONS = {
   'icon-shield': { raw: shieldRaw, size: UI_SIZE },
   'icon-zap': { raw: zapRaw, size: UI_SIZE },
   'icon-timer': { raw: timerRaw, size: UI_SIZE },
+  'icon-trophy': { raw: trophyRaw, size: UI_SIZE },
   'icon-skull': { raw: skullRaw, size: UI_SIZE },
   'icon-layers': { raw: layersRaw, size: UI_SIZE },
   'icon-swords': { raw: swordsRaw, size: UI_SIZE },
@@ -60,6 +65,9 @@ const ICONS = {
   'icon-crosshair': { raw: crosshairRaw, size: UI_SIZE },
   'icon-waves': { raw: wavesRaw, size: UI_SIZE },
   'icon-circle-dot': { raw: circleDotRaw, size: UI_SIZE },
+  'icon-pause': { raw: pauseRaw, size: UI_SIZE },
+  'icon-chevron-up': { raw: chevronUpRaw, size: UI_SIZE },
+  'icon-chevron-down': { raw: chevronDownRaw, size: UI_SIZE },
 };
 
 // btoa() falla con caracteres fuera de latin-1, así que pasamos por TextEncoder.

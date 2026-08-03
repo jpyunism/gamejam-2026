@@ -4,7 +4,7 @@ import {
   BOSS_COUNTDOWN_MS, BOSS_FIGHT_LIMIT_MS, BOSS_OVERSTAY_MULTIPLIER, BOSS_PROJECTILE_LIFETIME,
   BOSS_PROJECTILE_SPEED, BOSS_RANGED_PREFERRED_DIST, BOSS_SHOT_COOLDOWN_MS, BOSS_TELEGRAPH_MS,
   BOSS_WARNING_MS, CHEST_DELAY_MS, CHEST_TRIGGER_RADIUS, DIFFICULTY_RAMP_MS, ENEMY_KNOCKBACK_MS,
-  ENEMY_KNOCKBACK_SPEED, HIT_INVULN_MS, MAX_ENEMIES, MAX_SPAWN_PER_TICK, ORBIT_HIT_COOLDOWN_MS,
+  ENEMY_KNOCKBACK_SPEED, HIT_INVULN_MS, LEVEL_UP_DEBUG_KEY, MAX_ENEMIES, MAX_SPAWN_PER_TICK, ORBIT_HIT_COOLDOWN_MS,
   ORBIT_HIT_RADIUS, PIERCE_LIFETIME, PLAYER_KNOCKBACK_MS, PLAYER_KNOCKBACK_SPEED, PLAYER_MAX_HP,
   PORTAL_TRIGGER_RADIUS, PROJECTILE_LIFETIME, PROJECTILE_SPEED, SHIELD_REGEN_DELAY_MS,
   SPAWN_DELAY_MIN, SPAWN_RADIUS_MARGIN, STAGE_BOSS_MULTIPLIER, STAGE_PORTAL_MULTIPLIER,
@@ -23,9 +23,21 @@ import Minimap from '../ui/Minimap.js';
 import PauseMenu, { buildStatRows, buildWeaponSlots } from '../ui/PauseMenu.js';
 import SettingsPanel from '../ui/SettingsPanel.js';
 import LevelUpMenu from '../ui/LevelUpMenu.js';
-import { showEndScreen } from '../ui/EndScreen.js';
+import TouchControls from '../ui/TouchControls.js';
+import EndScreen from '../ui/EndScreen.js';
 import { playSfx } from '../audio/sfx.js';
-import { toggleMute, unlockAudio } from '../audio/synth.js';
+import { toggleMute, unlockAudio, startBgm, stopBgm, playStinger } from '../audio/synth.js';
+import { createGameTrack, createBossTrack } from '../audio/chip-tracks.js';
+import { generateLevelupStinger, generateGameoverStinger } from '../audio/stingers.js';
+
+const TRACK_GENERATORS = {
+  game: createGameTrack,
+  boss: createBossTrack,
+};
+import { toggleFullscreen } from '../utils/fullscreen.js';
+import { lockLandscape, unlockOrientation } from '../utils/orientation.js';
+import { isTouchDevice } from '../utils/device.js';
+import { panel, text } from '../ui/widgets.js';
 
 export default class GameScene extends Phaser.Scene {
   constructor() {
@@ -52,6 +64,45 @@ export default class GameScene extends Phaser.Scene {
     this.bindInput();
     // Por si se entra directo a esta escena sin pasar por el menú.
     unlockAudio();
+    startBgm('game', null, TRACK_GENERATORS);
+
+    if (isTouchDevice() && this.isPortrait()) {
+      this.showPortraitHint();
+    }
+    this.scale.on('resize', this.onResizePortrait, this);
+    this.events.once('shutdown', () => stopBgm());
+  }
+
+  isPortrait() {
+    return window.innerHeight > window.innerWidth;
+  }
+
+  onResizePortrait() {
+    if (this.isPortrait()) {
+      if (!this.portraitHint) this.showPortraitHint();
+    } else {
+      this.hidePortraitHint();
+    }
+  }
+
+  showPortraitHint() {
+    const cx = this.scale.width / 2;
+    const cy = this.scale.height / 2;
+    this.portraitHint = panel(this, {
+      width: 320, height: 56, depth: 500, border: 0xffaa00, origin: 0.5,
+    });
+    this.portraitHintText = text(this, '↻ Rotá el celular para jugar', {
+      size: '16px', color: 0xffaa00, depth: 501, origin: 0.5,
+    });
+    this.portraitHint.setPosition(cx, cy);
+    this.portraitHintText.setPosition(cx, cy);
+  }
+
+  hidePortraitHint() {
+    this.portraitHint?.destroy();
+    this.portraitHintText?.destroy();
+    this.portraitHint = null;
+    this.portraitHintText = null;
   }
 
   initState() {
@@ -81,6 +132,7 @@ export default class GameScene extends Phaser.Scene {
     this.isGameOver = false;
     this.hasWon = false;
     this.isPaused = false;
+    this.endScreen = null;
     this.lastHitAt = -Infinity;
     this.lastDamageTakenAt = -Infinity;
     this.playerKnockbackUntil = 0;
@@ -153,6 +205,8 @@ export default class GameScene extends Phaser.Scene {
     this.minimap = new Minimap(this);
     this.levelUpMenu = new LevelUpMenu(this, (i) => this.chooseUpgrade(i));
 
+    this.touchControls = isTouchDevice() ? new TouchControls(this) : null;
+
     this.pauseMenu = new PauseMenu(this, {
       onResume: () => this.resumeGame(),
       onSettings: () => this.openSettings(),
@@ -160,7 +214,19 @@ export default class GameScene extends Phaser.Scene {
       onQuit: () => this.quitToMenu(),
     });
     // Al cerrar configuración volvemos a la pausa, que es desde donde se abrió.
-    this.settingsPanel = new SettingsPanel(this, () => this.showPauseContent());
+    this.settingsPanel = new SettingsPanel(
+      this,
+      () => this.showPauseContent(),
+      (value) => {
+        this.touchControls?.setLayout(value);
+        this.minimap?.setLayout(value);
+        this.pauseMenu?.setLayout(value);
+        // Forzar relayout del HUD: la reserva para el boton de pausa cambia
+        // de lado segun el joystick, y el HUD no escucha el evento de resize
+        // porque el viewport no cambia.
+        this.hud?.layout(this.scale.width, this.scale.height);
+      },
+    );
 
     this.layoutUI();
     this.updateHud();
@@ -174,6 +240,10 @@ export default class GameScene extends Phaser.Scene {
     this.pauseMenu.layout(w, h);
     this.levelUpMenu.layout(w, h);
     this.settingsPanel.layout(w, h);
+    if (this.touchControls) {
+      this.touchControls.layout(w, h);
+      this.touchControls.setVisible(!this.isPortrait());
+    }
   }
 
   bindInput() {
@@ -181,14 +251,20 @@ export default class GameScene extends Phaser.Scene {
     this.wasd = this.input.keyboard.addKeys('W,A,S,D');
 
     this.input.keyboard.on('keydown-ESC', () => this.togglePause());
-    this.input.keyboard.on('keydown-M', () => toggleMute());
-    this.input.keyboard.on('keydown-F', () => {
-      if (this.scale.isFullscreen) {
-        this.scale.stopFullscreen();
-      } else {
-        this.scale.startFullscreen();
-      }
+    this.input.keyboard.on('keydown-M', () => {
+      if (this.endScreen?.isOpen) return;
+      toggleMute();
     });
+    this.input.keyboard.on('keydown-F', () => {
+      if (this.endScreen?.isOpen) return;
+      const result = toggleFullscreen(this.scale);
+      if (result === 'on') lockLandscape();
+      else if (result === 'off') unlockOrientation();
+    });
+    if (LEVEL_UP_DEBUG_KEY) {
+      this.input.keyboard.on('keydown-U', () => this._debugToggleLevelUp());
+    }
+    this._debugLevelUpOpen = false;
 
     this.onResize = () => {
       this.cameras.main.setSize(this.scale.width, this.scale.height);
@@ -197,6 +273,8 @@ export default class GameScene extends Phaser.Scene {
     };
     this.scale.on('resize', this.onResize);
     this.events.once('shutdown', () => this.scale.off('resize', this.onResize));
+    this.events.once('shutdown', () => this.scale.off('resize', this.onResizePortrait, this));
+    this.events.once('shutdown', () => this.hidePortraitHint());
   }
 
   // Los enemigos y el portal aparecen justo afuera de lo que se ve, sea cual sea la
@@ -230,6 +308,7 @@ export default class GameScene extends Phaser.Scene {
     this.player.setVelocity(0, 0);
     this.physics.world.pause();
     this.setTimersPaused(true);
+    this.touchControls?.setVisible(false);
     this.showPauseContent();
   }
 
@@ -246,6 +325,7 @@ export default class GameScene extends Phaser.Scene {
     this.physics.world.resume();
     this.setTimersPaused(false);
     this.pauseMenu.hide();
+    this.touchControls?.setVisible(!this.isPortrait());
   }
 
   openSettings() {
@@ -263,6 +343,7 @@ export default class GameScene extends Phaser.Scene {
 
   quitToMenu() {
     this.physics.world.resume();
+    this.touchControls?.setVisible(false);
     this.scene.start('menu');
   }
 
@@ -307,6 +388,16 @@ export default class GameScene extends Phaser.Scene {
     const down = this.cursors.down.isDown || this.wasd.S.isDown;
 
     const dir = new Phaser.Math.Vector2((right ? 1 : 0) - (left ? 1 : 0), (down ? 1 : 0) - (up ? 1 : 0));
+
+    // Touch gana sobre teclado si está activo. Copiamos los componentes (no la
+    // referencia) porque getVector() devuelve un vector compartido que escala
+    // acá mismo cada frame — mutarlo lo corrompería para llamadas siguientes.
+    const touchDir = this.touchControls?.getVector();
+    if (touchDir) {
+      dir.x = touchDir.x;
+      dir.y = touchDir.y;
+    }
+
     if (dir.lengthSq() > 0) {
       dir.normalize().scale(this.stats.moveSpeed);
       this.player.setVelocity(dir.x, dir.y);
@@ -518,6 +609,7 @@ export default class GameScene extends Phaser.Scene {
     this.isBossAlive = true;
     this.currentBoss = boss;
     this.bossFightCountdown = BOSS_FIGHT_LIMIT_MS;
+    startBgm('boss', null, TRACK_GENERATORS);
     this.hud.showBossBar();
   }
 
@@ -712,11 +804,16 @@ export default class GameScene extends Phaser.Scene {
     this.bossCountdown = BOSS_COUNTDOWN_MS;
     this.hud.hideBossBar();
 
+    // Volver a la musica del juego cuando muere el boss.
+    startBgm('game', null, TRACK_GENERATORS);
+
     this.stageMultiplier *= STAGE_BOSS_MULTIPLIER;
     this.spawnPortal();
     // El level-up que sigue tapa toda la pantalla con sus cards, así que el aviso
     // del portal se muestra recién al cerrarlo (ver chooseUpgrade), no ahora.
     this.pendingPortalHint = true;
+    // Stinger breve de level-up sobre la musica actual.
+    playStinger(generateLevelupStinger());
     this.levelUp();
   }
 
@@ -823,7 +920,21 @@ export default class GameScene extends Phaser.Scene {
 
   onPlayerPickupXp(player, orb) {
     const value = orb.getData('value') || 1;
+    const { x, y } = orb;
     orb.destroy();
+
+    // Feedback visual: partículas violetas + texto +value + pulse del
+    // icono XP del HUD. Reusamos deathEmitter para las partículas (no
+    // creamos un emiter nuevo). El text tiene throttle 100ms para no saturar
+    // cuando el aura recoge muchos orbes en cadena.
+    this.deathEmitter.setParticleTint(0xaa88ff);
+    this.deathEmitter.emitParticleAt(x, y, value >= 5 ? 8 : 4);
+    if (!this._lastXpTextAt || this.time.now - this._lastXpTextAt > 100) {
+      this.showFloatingText(x, y, `+${value}`, '#aa88ff');
+      this._lastXpTextAt = this.time.now;
+    }
+    this.hud?.pulseXpIcon();
+
     playSfx('xp');
     this.xp += value;
     if (this.xp >= this.xpToNext) {
@@ -892,15 +1003,36 @@ export default class GameScene extends Phaser.Scene {
   onGameOver() {
     this.isGameOver = true;
     this.setTimersPaused(true);
+    this.touchControls?.setVisible(false);
     playSfx('gameOver');
-    showEndScreen(this, { title: 'GAME OVER', color: TEXT.danger, elapsed: this.elapsed, level: this.level });
+    // Stinger triste de game over sobre la musica actual.
+    playStinger(generateGameoverStinger());
+    this.endScreen = new EndScreen(this, {
+      title: 'GAME OVER',
+      color: TEXT.danger,
+      elapsed: this.elapsed,
+      level: this.level,
+      onRestart: () => this.restartGame(),
+      onQuit: () => this.quitToMenu(),
+    });
   }
 
   onVictory() {
     this.hasWon = true;
     this.setTimersPaused(true);
+    this.touchControls?.setVisible(false);
     playSfx('victory');
-    showEndScreen(this, { title: '¡VICTORIA!', color: TEXT.gold, elapsed: this.elapsed, level: this.level });
+    // Stinger triste de victoria (mismo feeling que gameover, contraste con
+    // la musica agresiva del juego).
+    playStinger(generateGameoverStinger());
+    this.endScreen = new EndScreen(this, {
+      title: '¡VICTORIA!',
+      color: TEXT.gold,
+      elapsed: this.elapsed,
+      level: this.level,
+      onRestart: () => this.restartGame(),
+      onQuit: () => this.quitToMenu(),
+    });
   }
 
   // Arma el pool de mejoras a ofrecer: las stats no maxeadas, más un slot por arma
@@ -980,6 +1112,8 @@ export default class GameScene extends Phaser.Scene {
     this.isLevelingUp = true;
     this.player.setVelocity(0, 0);
     this.physics.world.pause();
+    this.touchControls?.setVisible(false);
+    this.hud.setAlpha(0.4);
 
     this.levelUpChoices = this.pickWeighted(this.getAvailableUpgrades(), 4);
     this.levelUpMenu.show(this.levelUpChoices, this.stats);
@@ -997,13 +1131,26 @@ export default class GameScene extends Phaser.Scene {
 
     this.levelUpMenu.hide();
     this.isLevelingUp = false;
+    this._debugLevelUpOpen = false;
     this.physics.world.resume();
+    this.touchControls?.setVisible(!this.isPortrait());
+    this.hud.setAlpha(1);
     // Respiro de invulnerabilidad al volver, para no comer un golpe al cerrar el menú.
     this.lastHitAt = this.time.now;
 
     if (this.pendingPortalHint) {
       this.pendingPortalHint = false;
       this.showPortalHint();
+    }
+  }
+
+  _debugToggleLevelUp() {
+    if (this.isPaused || this.isGameOver || this.hasWon) return;
+    if (!this.isLevelingUp) {
+      this.startLevelUp();
+      this._debugLevelUpOpen = true;
+    } else if (this._debugLevelUpOpen) {
+      this.chooseUpgrade(0);
     }
   }
 

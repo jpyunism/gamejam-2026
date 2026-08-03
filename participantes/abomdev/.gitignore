@@ -1,2 +1,13 @@
 node_modules/
 dist/
+
+# OpenCode local tooling — mirror of upstream skills, not part of the game
+.opencode/
+
+# Agent instruction file — local to this workspace, never commit
+AGENTS.md
+
+# Idea tracking — private notes for the agent and the user, never ships
+dev-notes/
+
+docs/superpowers/

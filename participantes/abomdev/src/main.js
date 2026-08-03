@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
+import IntroScene from './scenes/IntroScene.js';
 import MenuScene from './scenes/MenuScene.js';
 import GameScene from './scenes/GameScene.js';
 
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   backgroundColor: '#111122',
   parent: 'game',
@@ -18,5 +19,10 @@ new Phaser.Game({
       debug: false,
     },
   },
-  scene: [MenuScene, GameScene],
+  scene: [IntroScene, MenuScene, GameScene],
 });
+
+// Expuesto en window para que el smoke test automatizado (puppeteer) pueda
+// inspeccionar el estado del juego (menus, scene activa, etc.). En produccion
+// queda accesible pero no causa problemas.
+if (typeof window !== 'undefined') window.game = game;

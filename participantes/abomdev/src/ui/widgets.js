@@ -89,6 +89,10 @@ export function button(scene, { label, width, height, depth, color = TEXT.accent
       labelText.setPosition(x, y);
       return this;
     },
+    setSize(width, height) {
+      bg.setSize(width, height);
+      return this;
+    },
     setLabel(newLabel) {
       labelText.setText(newLabel);
       return this;
@@ -102,7 +106,10 @@ export function slider(scene, { label, width, depth, step = 0.1, onChange }) {
   const trackH = 12;
   const arrowW = 24;
 
-  const caption = text(scene, label, { size: FONT_SIZE.small, color: TEXT.secondary, depth: depth + 1 });
+  const caption = text(scene, label, {
+    size: FONT_SIZE.small, color: TEXT.secondary, depth: depth + 1,
+    wordWrapWidth: width, align: 'left',
+  });
   const valueText = text(scene, '', { size: FONT_SIZE.small, color: TEXT.accent, depth: depth + 1, origin: [1, 0] });
 
   const track = scene.add.rectangle(0, 0, width, trackH, UI.barTrack)
@@ -126,13 +133,15 @@ export function slider(scene, { label, width, depth, step = 0.1, onChange }) {
     },
 
     setPosition(x, y) {
-      caption.setPosition(x, y - 26);
+      caption.setPosition(x, y - 30);
       track.setPosition(x, y);
       fill.setPosition(x + 2, y);
       // Las flechas van pegadas a cada extremo de la pista.
       api.left.setPosition(x - arrowW / 2 - 8, y);
       api.right.setPosition(x + width + arrowW / 2 + 8, y);
-      valueText.setPosition(x + width, y - 26);
+      // El valor se muestra a la derecha del caption en la misma Y para que
+      // no se superponga con etiquetas largas.
+      valueText.setPosition(x + width, y - 30);
       return api;
     },
   };

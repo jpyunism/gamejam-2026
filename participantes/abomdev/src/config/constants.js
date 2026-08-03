@@ -36,3 +36,5 @@ export const VICTORY_STAGE = 3;
 export const BEST_TIME_KEY = 'survivorsBestTimeMs';
 export const MAX_ENEMIES = 150;
 export const MAX_SPAWN_PER_TICK = 6;
+
+export const LEVEL_UP_DEBUG_KEY = true;

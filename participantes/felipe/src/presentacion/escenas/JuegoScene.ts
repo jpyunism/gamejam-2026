@@ -11,11 +11,19 @@ import {
   RADIO_DE_TRAGO_FILAS,
   tragoDeRejilla,
 } from "../agua/Balance";
-import { VentanaDeAgua } from "../agua/VentanaDeAgua";
+import {
+  RADIO_DE_CONCENTRACION_EN_REJILLA,
+  type RejillaVisual,
+  VentanaDeAgua,
+} from "../agua/VentanaDeAgua";
+import {
+  actualizarGeometriaDeFoco,
+  type GeometriaDeFoco,
+} from "../arte/Luces";
 import { PALETA } from "../arte/theme";
 import { textoPixel } from "../arte/TextoPixel";
 import { sonido } from "../audio/Sonido";
-import { CELDA_PX, metroAPixel, pixelAMetro } from "../Escala";
+import { CELDA_PX, metroAPixel, pixelAMetro, SUELO_Y } from "../Escala";
 import { Camioneta } from "../mundo/Camioneta";
 import { Escenario } from "../mundo/Escenario";
 import { Recuerdos } from "../mundo/Recuerdos";
@@ -26,6 +34,7 @@ interface DatosJuego {
 
 const PASO_DE_SIMULACION = 1 / 30;
 const MARGEN_DEL_JUGADOR = 90;
+const DURACION_FADE_IN_MS = 650;
 
 export class JuegoScene extends Phaser.Scene {
   private modo: Modo = MODOS.temporal;
@@ -38,7 +47,10 @@ export class JuegoScene extends Phaser.Scene {
   private acumulado = 0;
   private teclas!: Phaser.Types.Input.Keyboard.CursorKeys;
   private espacio!: Phaser.Input.Keyboard.Key;
+  private readonly foco: GeometriaDeFoco = { x: 0, y: 0, direccion: 1 };
+  private rejillasVisuales: RejillaVisual[] = [];
   private estabaEnAgua = false;
+  private fadeEnCurso = false;
 
   constructor() {
     super("Juego");
@@ -49,11 +61,16 @@ export class JuegoScene extends Phaser.Scene {
   }
 
   create() {
+    this.iniciarFadeIn();
     this.partida = Partida.comenzar(this.modo, Date.now() >>> 0);
     this.escenario = new Escenario(this, this.partida.alameda);
     this.ventana = new VentanaDeAgua(this);
+    this.rejillasVisuales = this.partida.alameda.sumideros.map((sumidero) => ({
+      columna: this.escenario.columnaDe(sumidero, CELDA_PX),
+      obstruccion: sumidero.obstruccion,
+    }));
     this.ventana.dondeEstanLasRejillas(
-      this.partida.alameda.sumideros.map((sumidero) => this.escenario.columnaDe(sumidero, CELDA_PX)),
+      this.rejillasVisuales.map((rejilla) => rejilla.columna),
       Math.round(metroAPixel(METROS_ENTRE_SUMIDEROS) / CELDA_PX),
     );
     this.ventana.sembrarCharcos(
@@ -70,13 +87,16 @@ export class JuegoScene extends Phaser.Scene {
     this.cameras.main.setScroll(0, 0);
     this.teclas = this.input.keyboard!.createCursorKeys();
     this.espacio = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.input.keyboard?.on("keydown-ESC", () => this.scene.start("Menu"));
-    this.input.keyboard?.on("keydown-R", () => this.scene.restart({ modo: this.modo }));
+    this.input.keyboard?.on("keydown-ESC", () => this.volverAlMenu());
+    this.input.keyboard?.on("keydown-R", () => this.reiniciar());
 
     this.registry.set("partida", this.partida);
     this.scene.launch("Hud");
     sonido.encender();
     this.input.keyboard?.on("keydown-P", () => {
+      if (this.fadeEnCurso) {
+        return;
+      }
       this.scene.pause();
       this.scene.launch("Pausa");
     });
@@ -110,17 +130,87 @@ export class JuegoScene extends Phaser.Scene {
       this.simularAgua();
     }
 
+    const jugadorX = metroAPixel(this.partida.jugador.metro);
+    actualizarGeometriaDeFoco(
+      this.foco,
+      jugadorX,
+      SUELO_Y,
+      this.partida.jugador.rumbo === "izquierda",
+    );
     this.ventana.seguirCamara(this.cameras.main.scrollX);
-    this.ventana.pintar();
+    const columnaVisibleInicial = Math.floor(this.cameras.main.scrollX / CELDA_PX);
+    const columnaVisibleFinal = Math.ceil(
+      (this.cameras.main.scrollX + this.scale.width) / CELDA_PX,
+    );
+    let primeraRejillaVisible = 0;
+    while (
+      primeraRejillaVisible < this.rejillasVisuales.length &&
+      this.rejillasVisuales[primeraRejillaVisible].columna +
+        RADIO_DE_CONCENTRACION_EN_REJILLA <
+        columnaVisibleInicial
+    ) {
+      primeraRejillaVisible += 1;
+    }
+    let finalRejillasVisibles = primeraRejillaVisible;
+    while (
+      finalRejillasVisibles < this.rejillasVisuales.length &&
+      this.rejillasVisuales[finalRejillasVisibles].columna -
+        RADIO_DE_CONCENTRACION_EN_REJILLA <
+        columnaVisibleFinal
+    ) {
+      this.rejillasVisuales[finalRejillasVisibles].obstruccion =
+        this.partida.alameda.sumideros[finalRejillasVisibles].obstruccion;
+      finalRejillasVisibles += 1;
+    }
+    this.ventana.pintar(
+      this.foco,
+      this.cameras.main.scrollX,
+      this.scale.width,
+      this.rejillasVisuales,
+      primeraRejillaVisible,
+      finalRejillasVisibles,
+    );
     this.escenario.actualizarRejillas();
     this.recuerdos.actualizar(segundos, this.partida, this.cameras.main.scrollX, this.scale.width);
-    this.camioneta.actualizar(this.partida.jugador, this.partida.sumideroAlAlcance());
+    this.camioneta.actualizar(this.partida.jugador, this.partida.sumideroAlAlcance(), this.foco);
     sonido.intensidadDeLluvia(this.partida.caudal);
     sonido.talVezGranizo(this.partida.oleada.granizoPorSegundo, segundos);
 
     if (this.partida.terminada) {
       this.terminar();
     }
+  }
+
+  private iniciarFadeIn() {
+    const camara = this.cameras.main;
+    this.fadeEnCurso = true;
+    this.tweens.killTweensOf(camara);
+    camara.setAlpha(0);
+    this.tweens.add({
+      targets: camara,
+      alpha: 1,
+      duration: DURACION_FADE_IN_MS,
+      ease: "Sine.easeOut",
+      onComplete: () => {
+        camara.setAlpha(1);
+        this.fadeEnCurso = false;
+      },
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.tweens.killTweensOf(camara);
+      camara.setAlpha(1);
+      this.fadeEnCurso = false;
+    });
+  }
+
+  private reiniciar() {
+    this.scene.stop("Hud");
+    this.scene.restart({ modo: this.modo });
+  }
+
+  private volverAlMenu() {
+    this.scene.stop("Hud");
+    this.scene.start("Menu");
   }
 
   private terminar() {

@@ -2,13 +2,11 @@ import Phaser from "phaser";
 
 import type { Sumidero } from "../../dominio/corredor/Sumidero";
 import type { Jugador } from "../../dominio/partida/Jugador";
-import { CONO_DE_FOCO, RESPLANDOR } from "../arte/Luces";
+import { CONO_DE_FOCO, type GeometriaDeFoco, RESPLANDOR } from "../arte/Luces";
 import { PALETA } from "../arte/theme";
 import { metroAPixel, SUELO_Y } from "../Escala";
 
 const ANCHO_BARRA = 44;
-const ALCANCE_DEL_FOCO = 78;
-const ALTURA_DEL_FOCO = 26;
 const ALTURA_DE_LA_BALIZA = 52;
 
 export class Camioneta {
@@ -22,8 +20,9 @@ export class Camioneta {
     this.foco = escena.add
       .image(0, SUELO_Y, CONO_DE_FOCO)
       .setOrigin(0, 0.5)
+      .setAlpha(1)
       .setBlendMode(Phaser.BlendModes.ADD)
-      .setDepth(48);
+      .setDepth(29);
     this.sprite = escena.add
       .image(0, SUELO_Y, "camioneta_derecha")
       .setOrigin(0.5, 1)
@@ -47,14 +46,13 @@ export class Camioneta {
     this.barra = escena.add.graphics().setDepth(60);
   }
 
-  actualizar(jugador: Jugador, objetivo: Sumidero | null) {
+  actualizar(jugador: Jugador, objetivo: Sumidero | null, foco: GeometriaDeFoco) {
     const x = metroAPixel(jugador.metro);
     this.sprite.setPosition(x, SUELO_Y + 6);
     const haciaLaIzquierda = jugador.rumbo === "izquierda";
     this.sprite.setTexture(haciaLaIzquierda ? "camioneta_izquierda" : "camioneta_derecha");
 
-    const morro = haciaLaIzquierda ? x - ALCANCE_DEL_FOCO * 0.36 : x + ALCANCE_DEL_FOCO * 0.36;
-    this.foco.setPosition(morro, SUELO_Y - ALTURA_DEL_FOCO);
+    this.foco.setPosition(foco.x, foco.y);
     this.foco.setFlipX(haciaLaIzquierda);
     this.foco.setOrigin(haciaLaIzquierda ? 1 : 0, 0.5);
     this.baliza.setPosition(

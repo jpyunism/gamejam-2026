@@ -3,6 +3,7 @@ import Phaser from "phaser";
 import { DIFICULTAD } from "../../config";
 import { Azar } from "../../dominio/agua/Azar";
 import { CELDA, Granos } from "../../dominio/agua/Granos";
+import { intensidadEnFoco, type GeometriaDeFoco } from "../arte/Luces";
 import { PALETA } from "../arte/theme";
 import { CELDA_PX, FILAS_DE_AGUA, MARGEN_DE_AGUA, SUELO_Y } from "../Escala";
 import { alturaDelPiso, CAIDA_HACIA_LA_REJILLA } from "./PerfilDeCalle";
@@ -15,9 +16,37 @@ const FILAS_DE_CHARCO_INICIAL = 1;
 const RADIO_DE_CHARCO_SUCIO = 11;
 const FILAS_DE_CHARCO_SUCIO = 10;
 const PASOS_PARA_ASENTAR = 20;
+const COLUMNAS_POR_RAFAGA_VISUAL = 4;
+const LARGO_MINIMO_DE_ESTELA = 2;
+const VARIACIONES_DE_LARGO_DE_ESTELA = 4;
+const REFLEJO_DE_SUPERFICIE = 0.28;
+const REFLEJO_DE_GOTA = 0.2;
+const AUMENTO_DE_ALFA_DE_GOTA = 20;
+export const RADIO_DE_CONCENTRACION_EN_REJILLA = 12;
+const REFLEJO_MAXIMO_DE_REJILLA = 0.34;
+const OBSTRUCCION_VISUAL_MINIMA = 0.05;
+
+export interface RejillaVisual {
+  columna: number;
+  obstruccion: number;
+}
 
 function componentes(color: number): [number, number, number] {
   return [(color >> 16) & 255, (color >> 8) & 255, color & 255];
+}
+
+function mezclar(desde: readonly number[], hasta: readonly number[]): [number, number, number] {
+  return [
+    Math.round((desde[0] + hasta[0]) / 2),
+    Math.round((desde[1] + hasta[1]) / 2),
+    Math.round((desde[2] + hasta[2]) / 2),
+  ];
+}
+
+function firmaVisual(posicion: number): number {
+  let firma = Math.imul(posicion ^ (posicion >>> 16), 0x45d9f3b);
+  firma = Math.imul(firma ^ (firma >>> 16), 0x45d9f3b);
+  return (firma ^ (firma >>> 16)) >>> 0;
 }
 
 export class VentanaDeAgua {
@@ -28,6 +57,8 @@ export class VentanaDeAgua {
   private readonly imagen: ImageData;
   private readonly agua = componentes(PALETA.agua);
   private readonly brillo = componentes(PALETA.agua_brillo);
+  private readonly lluviaMedia = mezclar(this.agua, this.brillo);
+  private readonly concentracionPorColumna: Float32Array;
   private columnaOrigen = 0;
   private rejillas: readonly number[] = [];
   private medioTramo = 25;
@@ -38,6 +69,7 @@ export class VentanaDeAgua {
       Math.ceil(escena.scale.width / CELDA_PX) + MARGEN_DE_AGUA * 2,
     );
     this.granos = new Granos(this.columnas, FILAS_DE_AGUA, new Azar(20260727));
+    this.concentracionPorColumna = new Float32Array(this.columnas);
     if (escena.textures.exists(CLAVE)) {
       escena.textures.remove(CLAVE);
     }
@@ -170,35 +202,146 @@ export class VentanaDeAgua {
     this.granos.paso();
   }
 
-  pintar() {
+  pintar(
+    foco: GeometriaDeFoco,
+    scrollX: number,
+    anchoVisible: number,
+    rejillasVisuales: readonly RejillaVisual[],
+    primeraRejillaVisible: number,
+    finalRejillasVisibles: number,
+  ) {
     const datos = this.imagen.data;
+    const columnaVisibleInicial = Math.max(
+      0,
+      Math.floor(scrollX / CELDA_PX) - this.columnaOrigen,
+    );
+    const columnaVisibleFinal = Math.min(
+      this.columnas,
+      Math.ceil((scrollX + anchoVisible) / CELDA_PX) - this.columnaOrigen,
+    );
+    this.prepararConcentracionEnRejillas(
+      rejillasVisuales,
+      primeraRejillaVisible,
+      finalRejillasVisibles,
+      columnaVisibleInicial,
+      columnaVisibleFinal,
+    );
     for (let fila = 0; fila < FILAS_DE_AGUA; fila += 1) {
-      for (let columna = 0; columna < this.columnas; columna += 1) {
+      const y = this.alturaTope + (fila + 0.5) * CELDA_PX;
+      for (let columna = columnaVisibleInicial; columna < columnaVisibleFinal; columna += 1) {
         const destino = (fila * this.columnas + columna) * 4;
         if (this.granos.celdaEn(columna, fila) !== CELDA.agua) {
           datos[destino + 3] = 0;
           continue;
         }
         const superficie = this.granos.celdaEn(columna, fila - 1) !== CELDA.agua;
-        const color = superficie ? this.brillo : this.agua;
-        datos[destino] = color[0];
-        datos[destino + 1] = color[1];
-        datos[destino + 2] = color[2];
-        datos[destino + 3] = 255;
-
-        if (this.granos.celdaEn(columna, fila + 1) === CELDA.aire) {
-          for (let largo = 1; largo <= 4 && fila - largo >= 0; largo += 1) {
-            const estela = ((fila - largo) * this.columnas + columna) * 4;
-            datos[estela] = this.agua[0];
-            datos[estela + 1] = this.agua[1];
-            datos[estela + 2] = this.agua[2];
-            datos[estela + 3] = 170 - largo * 34;
+        const estaCayendo = this.granos.celdaEn(columna, fila + 1) === CELDA.aire;
+        const columnaMundo = this.columnaOrigen + columna;
+        if (!estaCayendo) {
+          const color = superficie ? this.brillo : this.agua;
+          const reflejo = superficie
+            ? intensidadEnFoco(
+                foco,
+                (columnaMundo + 0.5) * CELDA_PX,
+                y,
+              ) * REFLEJO_DE_SUPERFICIE
+            : 0;
+          const rojoConFoco = color[0] + (255 - color[0]) * reflejo;
+          const verdeConFoco = color[1] + (244 - color[1]) * reflejo;
+          const azulConFoco = color[2] + (198 - color[2]) * reflejo;
+          const concentracionBase = superficie ? this.concentracionPorColumna[columna] : 0;
+          if (concentracionBase > 0) {
+            const concentracion =
+              concentracionBase * (0.65 + (firmaVisual(columnaMundo) % 3) * 0.175);
+            datos[destino] = rojoConFoco + (210 - rojoConFoco) * concentracion;
+            datos[destino + 1] = verdeConFoco + (255 - verdeConFoco) * concentracion;
+            datos[destino + 2] = azulConFoco + (255 - azulConFoco) * concentracion;
+          } else {
+            datos[destino] = rojoConFoco;
+            datos[destino + 1] = verdeConFoco;
+            datos[destino + 2] = azulConFoco;
           }
+          datos[destino + 3] = 255;
+          continue;
+        }
+
+        const firmaDeColumna = firmaVisual(columnaMundo);
+        const firmaDeRafaga = firmaVisual(
+          Math.floor(columnaMundo / COLUMNAS_POR_RAFAGA_VISUAL),
+        );
+        const variante = (firmaDeColumna ^ (firmaDeRafaga >>> 1)) >>> 0;
+        const varianteDeTono = variante % 3;
+        const tono =
+          varianteDeTono === 0 ? this.agua : varianteDeTono === 1 ? this.lluviaMedia : this.brillo;
+        const alfaDeGota = 208 + ((variante >>> 5) % 48);
+        const largoDeEstela =
+          LARGO_MINIMO_DE_ESTELA + ((variante >>> 11) % VARIACIONES_DE_LARGO_DE_ESTELA);
+        const alfaInicialDeEstela = 135 + ((firmaDeRafaga >>> 7) % 46);
+
+        const intensidad = intensidadEnFoco(foco, (columnaMundo + 0.5) * CELDA_PX, y);
+        const reflejo = intensidad * REFLEJO_DE_GOTA;
+        const gotaRoja = tono[0] + (255 - tono[0]) * reflejo;
+        const gotaVerde = tono[1] + (244 - tono[1]) * reflejo;
+        const gotaAzul = tono[2] + (198 - tono[2]) * reflejo;
+        datos[destino] = gotaRoja;
+        datos[destino + 1] = gotaVerde;
+        datos[destino + 2] = gotaAzul;
+        datos[destino + 3] = Math.min(255, alfaDeGota + intensidad * AUMENTO_DE_ALFA_DE_GOTA);
+
+        for (let largo = 1; largo <= largoDeEstela && fila - largo >= 0; largo += 1) {
+          const filaDeEstela = fila - largo;
+          if (this.granos.celdaEn(columna, filaDeEstela) !== CELDA.aire) {
+            break;
+          }
+          const estela = (filaDeEstela * this.columnas + columna) * 4;
+          datos[estela] = gotaRoja;
+          datos[estela + 1] = gotaVerde;
+          datos[estela + 2] = gotaAzul;
+          datos[estela + 3] = Math.round(
+            alfaInicialDeEstela * (1 - largo / (largoDeEstela + 1)),
+          );
         }
       }
     }
     this.textura.getContext().putImageData(this.imagen, 0, 0);
     this.textura.refresh();
+  }
+
+  private prepararConcentracionEnRejillas(
+    rejillas: readonly RejillaVisual[],
+    primeraRejillaVisible: number,
+    finalRejillasVisibles: number,
+    columnaVisibleInicial: number,
+    columnaVisibleFinal: number,
+  ) {
+    this.concentracionPorColumna.fill(0, columnaVisibleInicial, columnaVisibleFinal);
+    const mundoInicial = this.columnaOrigen + columnaVisibleInicial;
+    const mundoFinal = this.columnaOrigen + columnaVisibleFinal;
+    for (let indice = primeraRejillaVisible; indice < finalRejillasVisibles; indice += 1) {
+      const rejilla = rejillas[indice];
+      if (
+        rejilla.obstruccion <= OBSTRUCCION_VISUAL_MINIMA ||
+        rejilla.columna + RADIO_DE_CONCENTRACION_EN_REJILLA < mundoInicial ||
+        rejilla.columna - RADIO_DE_CONCENTRACION_EN_REJILLA >= mundoFinal
+      ) {
+        continue;
+      }
+      const centro = rejilla.columna - this.columnaOrigen;
+      const desde = Math.max(columnaVisibleInicial, centro - RADIO_DE_CONCENTRACION_EN_REJILLA);
+      const hasta = Math.min(
+        columnaVisibleFinal - 1,
+        centro + RADIO_DE_CONCENTRACION_EN_REJILLA,
+      );
+      for (let columna = desde; columna <= hasta; columna += 1) {
+        const distancia = Math.abs(columna - centro) / (RADIO_DE_CONCENTRACION_EN_REJILLA + 1);
+        const cercania = 1 - distancia;
+        const intensidad =
+          rejilla.obstruccion * cercania * cercania * REFLEJO_MAXIMO_DE_REJILLA;
+        if (intensidad > this.concentracionPorColumna[columna]) {
+          this.concentracionPorColumna[columna] = intensidad;
+        }
+      }
+    }
   }
 
   private ponerPiso() {

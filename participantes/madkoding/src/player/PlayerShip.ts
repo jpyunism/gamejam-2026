@@ -17,6 +17,7 @@ export class PlayerShip {
   private _maxShields: number;
   private _invincible = false;
   private _invincibilityTimer = 0;
+  private _disposed = false;
   private eventBus: EventBus;
 
   // Starfox-style banking: ship rolls into lateral turns and pitches
@@ -55,7 +56,7 @@ export class PlayerShip {
 
   private async loadGLBModel(scene: THREE.Scene): Promise<void> {
     const glb = await PlayerShipMeshFactory.loadGLB();
-    if (!glb) return;
+    if (!glb || this._disposed) return;
 
     // Find the actual mesh inside the GLB scene and rot
     glb.traverse((c) => {
@@ -206,6 +207,7 @@ export class PlayerShip {
   }
 
   dispose(): void {
+    this._disposed = true;
     this.foxTail.dispose();
     this.group.parent?.remove(this.group);
     this.group.traverse((c) => {

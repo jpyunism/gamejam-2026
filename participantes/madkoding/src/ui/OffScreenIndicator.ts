@@ -93,6 +93,11 @@ export class OffScreenIndicator {
     }
   }
 
+  /** Hide all indicators (pause/menu/level change). */
+  reset(): void {
+    for (const el of this.indicators) el.style.opacity = '0';
+  }
+
   dispose(): void {
     this.container.remove();
   }

@@ -4,14 +4,18 @@ export class PauseOverlay {
   private element: HTMLElement;
   private resumeButton: HTMLElement;
   private quitButton: HTMLElement;
+  private onResume: () => void;
+  private onQuit: () => void;
 
   constructor(private actions: { resume: () => void; quit: () => void }) {
     this.element = document.getElementById('pause-overlay') as HTMLElement;
     this.resumeButton = document.getElementById('resume-button') as HTMLElement;
     this.quitButton = document.getElementById('quit-button') as HTMLElement;
 
-    this.resumeButton.addEventListener('click', () => this.actions.resume());
-    this.quitButton.addEventListener('click', () => this.actions.quit());
+    this.onResume = () => this.actions.resume();
+    this.onQuit = () => this.actions.quit();
+    this.resumeButton.addEventListener('click', this.onResume);
+    this.quitButton.addEventListener('click', this.onQuit);
   }
 
   show(): void {
@@ -23,6 +27,7 @@ export class PauseOverlay {
   }
 
   dispose(): void {
-    // Clean up
+    this.resumeButton.removeEventListener('click', this.onResume);
+    this.quitButton.removeEventListener('click', this.onQuit);
   }
 }

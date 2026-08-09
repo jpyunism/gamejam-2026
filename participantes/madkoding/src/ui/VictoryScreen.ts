@@ -8,6 +8,8 @@ export class VictoryScreen {
   private continueButton: HTMLElement;
   private scoreElement: HTMLElement;
   private eventBus: EventBus;
+  private onContinueRef: () => void;
+  private onVictory: (p: { score: number }) => void;
 
   constructor(private onContinue: () => void) {
     this.eventBus = EventBus.getInstance();
@@ -15,12 +17,14 @@ export class VictoryScreen {
     this.continueButton = document.getElementById('victory-continue-button') as HTMLElement;
     this.scoreElement = document.getElementById('victory-score') as HTMLElement;
 
-    this.continueButton.addEventListener('click', () => this.onContinue());
+    this.onContinueRef = () => this.onContinue();
+    this.continueButton.addEventListener('click', this.onContinueRef);
 
-    this.eventBus.on(GameEvent.VICTORY, (p) => {
+    this.onVictory = (p) => {
       this.scoreElement.textContent = `Puntuación: ${p.score.toLocaleString()}`;
       this.show();
-    });
+    };
+    this.eventBus.on(GameEvent.VICTORY, this.onVictory);
   }
 
   show(): void {
@@ -32,6 +36,7 @@ export class VictoryScreen {
   }
 
   dispose(): void {
-    // Clean up
+    this.continueButton.removeEventListener('click', this.onContinueRef);
+    this.eventBus.off(GameEvent.VICTORY, this.onVictory);
   }
 }

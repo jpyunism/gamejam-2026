@@ -13,15 +13,16 @@ export interface RailPosition {
 export class RailController {
   private curve: THREE.CatmullRomCurve3;
   private _progress = 0;
-  private _lateralOffset = 0;
-  private _targetLateral = 0;
-  private _verticalOffset = 0;
-  private _targetVertical = 0;
   private _speed: number;
   private totalLength: number;
   // Camera-driven parallax offset in world units; set by Game from PlayerShip.
   private _screenOffsetX = 0;
   private _screenOffsetY = 0;
+  private _scratchPoint = new THREE.Vector3();
+  private _scratchTangent = new THREE.Vector3();
+  private _scratchRight = new THREE.Vector3();
+  private _scratchUp = new THREE.Vector3();
+  private _scratchPos = new THREE.Vector3();
 
   constructor(waypoints: THREE.Vector3[], speed = RAIL.RAIL_SPEED) {
     this.curve = new THREE.CatmullRomCurve3(waypoints);
@@ -46,31 +47,6 @@ export class RailController {
    *  walls) can follow the same winding path the ship flies. */
   getCurve(): THREE.CatmullRomCurve3 {
     return this.curve;
-  }
-
-  get length(): number {
-    return this.totalLength;
-  }
-
-  /** Point on the rail curve at a given progress (0..1). */
-  pointAt(progress: number): THREE.Vector3 {
-    return this.curve.getPointAt(THREE.MathUtils.clamp(progress, 0, 1));
-  }
-
-  addLateralInput(delta: number): void {
-    this._targetLateral = THREE.MathUtils.clamp(
-      this._targetLateral + delta,
-      -RAIL.LATERAL_LIMIT,
-      RAIL.LATERAL_LIMIT
-    );
-  }
-
-  addVerticalInput(delta: number): void {
-    this._targetVertical = THREE.MathUtils.clamp(
-      this._targetVertical + delta,
-      -RAIL.VERTICAL_LIMIT,
-      RAIL.VERTICAL_LIMIT
-    );
   }
 
   /**
@@ -99,24 +75,24 @@ export class RailController {
   }
 
   private _getPosition(offsetX: number, offsetY: number): RailPosition {
-    const point = this.curve.getPoint(this._progress);
-    const tangent = this.curve.getTangent(this._progress).normalize();
+    const point = this._scratchPoint.copy(this.curve.getPoint(this._progress));
+    const tangent = this._scratchTangent.copy(this.curve.getTangent(this._progress)).normalize();
 
     // Calculate right vector from tangent and world up
     const worldUp = new THREE.Vector3(0, 1, 0);
-    const right = new THREE.Vector3().crossVectors(tangent, worldUp).normalize();
-    const up = new THREE.Vector3().crossVectors(right, tangent).normalize();
+    const right = this._scratchRight.crossVectors(tangent, worldUp).normalize();
+    const up = this._scratchUp.crossVectors(right, tangent).normalize();
 
-    const position = point
-      .clone()
-      .add(right.clone().multiplyScalar(offsetX))
-      .add(up.clone().multiplyScalar(offsetY));
+    const position = this._scratchPos
+      .copy(point)
+      .addScaledVector(right, offsetX)
+      .addScaledVector(up, offsetY);
 
     return {
       position,
       forward: tangent.clone(), // Direction of travel
-      up,
-      tangent,
+      up: up.clone(),
+      tangent: tangent.clone(),
     };
   }
 

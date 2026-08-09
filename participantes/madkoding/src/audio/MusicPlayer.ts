@@ -14,4 +14,27 @@ export class MusicPlayer {
       // Autoplay may be blocked until user interacts
     });
   }
+
+  pause(): void {
+    if (!this.audio || this.audio.paused) return;
+    this.audio.pause();
+  }
+
+  resume(): void {
+    if (!this.audio || !this.audio.paused) return;
+    this.audio.play().catch(() => {});
+  }
+
+  stop(): void {
+    this._playing = false;
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.currentTime = 0;
+    }
+  }
+
+  dispose(): void {
+    this.stop();
+    this.audio = null;
+  }
 }

@@ -56,7 +56,9 @@ export class GameSceneFactory {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 8.5;
+    // ponytail: 8.5 was blown-out; 1.5 is a sane ACES baseline. Tune if the
+    // scene reads too dark/bright after the lighting pass.
+    renderer.toneMappingExposure = 1.5;
     return renderer;
   }
 }

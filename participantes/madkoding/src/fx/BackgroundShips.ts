@@ -3,6 +3,8 @@
 // ship's path. Some enemy formations spawn from behind a corvette.
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
 interface Corvette {
   group: THREE.Group;
@@ -70,8 +72,6 @@ export class BackgroundShips {
     if (_modelLoadPromise) return _modelLoadPromise;
     _modelLoadPromise = (async () => {
       try {
-        const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
-        const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js');
         const loader = new GLTFLoader();
         const draco = new DRACOLoader();
         draco.setDecoderPath('./draco/');

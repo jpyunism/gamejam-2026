@@ -34,8 +34,3 @@ export function overfly(
   pos.x = playerPos.x + Math.sin(t) * weaveAmpX;
   pos.y = playerPos.y + Math.cos(t * 0.7) * weaveAmpY;
 }
-
-export function clampToPlayArea(pos: THREE.Vector3, playerPos: THREE.Vector3): void {
-  pos.x = THREE.MathUtils.clamp(pos.x, playerPos.x - 12, playerPos.x + 12);
-  pos.y = THREE.MathUtils.clamp(pos.y, playerPos.y - 7, playerPos.y + 7);
-}

@@ -92,6 +92,9 @@ export class Game {
 
   constructor(canvas: HTMLCanvasElement) {
     this.eventBus = EventBus.getInstance();
+    // Recreating the Game (HMR / reinit) must not stack listeners from the
+    // previous instance on the global singleton bus.
+    this.eventBus.clear();
     this.timekeeper = Timekeeper.getInstance();
     this.stateManager = StateManager.getInstance();
 
@@ -133,7 +136,7 @@ export class Game {
       resume: () => this.resumeGame(),
       quit: () => this.returnToMenu(),
     });
-    this.gameOverScreen = new GameOverScreen(() => this.startGame());
+    this.gameOverScreen = new GameOverScreen(() => this.startGame(), () => this.returnToMenu());
     this.victoryScreen = new VictoryScreen(() => this.returnToMenu());
     this.profiler = new Stats();
 
@@ -216,8 +219,10 @@ export class Game {
   private startGame(): void {
     const state = this.stateManager.current;
     if (state !== GameState.MENU && state !== GameState.GAME_OVER) return;
+    this.eventBinder.cancelPendingLevelLoad();
     this.scoreSystem.reset();
     this.resetAllSystems();
+    this.timekeeper.reset();
     this.menuScreen.hide();
     this.pauseOverlay.hide();
     this.gameOverScreen.hide();
@@ -226,10 +231,9 @@ export class Game {
     this.hud.setVisible(true);
     this.musicPlayer.play();
     this.levelManager.reset();
-    // Random first level so the player can preview the different terrain /
-    // skybox types available across the 20 levels.
-    const randomLevel = Math.floor(Math.random() * this.levelManager.totalLevels);
-    this.startLevel(randomLevel);
+    // Start at level 0 (Primer Vuelo) so the player always gets the tutorial
+    // intro before the difficulty ramps.
+    this.startLevel(0);
     // First start: show ENGAGE before enemies spawn. Must be set AFTER
     // startLevel() because waveManager.reset() clears _engageMode.
     this.waveManager.setEngageMode(true);
@@ -239,6 +243,7 @@ export class Game {
   private resumeGame(): void {
     if (this.stateManager.current !== GameState.PAUSED) return;
     this.pauseOverlay.hide();
+    this.musicPlayer.resume();
     this.stateManager.transition(GameState.PLAYING);
   }
 
@@ -318,12 +323,14 @@ export class Game {
 
   private returnToMenu(): void {
     const state = this.stateManager.current;
-    if (state !== GameState.PAUSED && state !== GameState.VICTORY) return;
+    if (state !== GameState.PAUSED && state !== GameState.VICTORY && state !== GameState.GAME_OVER) return;
+    this.eventBinder.cancelPendingLevelLoad();
     this.hud.setVisible(false);
     this.menuScreen.show();
     this.pauseOverlay.hide();
     this.gameOverScreen.hide();
     this.victoryScreen.hide();
+    this.musicPlayer.stop();
     this.resetAllSystems();
     this.stateManager.transition(GameState.MENU);
   }
@@ -345,6 +352,7 @@ export class Game {
     this.lifeManager.reset();
     this.terrainManager.reset();
     this.terrainDecorations.reset();
+    this.offScreenIndicator.reset();
   }
 
   private onResize(): void {
@@ -395,6 +403,7 @@ export class Game {
     if (input.pause && state === GameState.PLAYING) {
       this.stateManager.transition(GameState.PAUSED);
       this.pauseOverlay.show();
+      this.musicPlayer.pause();
     } else if (input.pause && state === GameState.PAUSED) {
       this.resumeGame();
     }
@@ -529,7 +538,6 @@ export class Game {
   private _raycaster = new THREE.Raycaster();
   private _ndc = new THREE.Vector2();
   private _aimPoint = new THREE.Vector3();
-  private _projVec = new THREE.Vector3();
   private _keyboardAimX = 0;
   private _keyboardAimY = 0;
 
@@ -553,14 +561,6 @@ export class Game {
     this._offsetRight.copy(railPos.forward).cross(railPos.up).normalize();
     this._offsetUp.copy(railPos.up).normalize();
     return new THREE.Vector2(projected.dot(this._offsetRight), projected.dot(this._offsetUp));
-  }
-
-  // Project a world position to NDC (-1..1). Used to anchor the crosshair to
-  // the ship's on-screen position so it follows the ship as it drifts within
-  // the frame (camera parallax lag).
-  private projectToNdc(worldPos: THREE.Vector3): THREE.Vector2 {
-    this._projVec.copy(worldPos).project(this.cameraRig.camera3D);
-    return new THREE.Vector2(this._projVec.x, this._projVec.y);
   }
 
   private computeAimDirection(aimX: number, aimY: number, railPos: { position: THREE.Vector3; forward: THREE.Vector3 }): THREE.Vector3 {
@@ -603,6 +603,7 @@ export class Game {
 
   dispose(): void {
     this.stop();
+    this.eventBinder.dispose();
     this.inputMapper.dispose();
     this.weaponSystem.dispose();
     this.enemyManager.dispose();
@@ -615,18 +616,22 @@ export class Game {
     this.terrainManager.dispose();
     this.terrainDecorations.dispose();
     this.skybox.dispose();
+    this.particleTerrain.dispose();
     this.powerUpManager.dispose();
     this.obstacleManager.dispose();
     this.audioManager.dispose();
+    this.musicPlayer.dispose();
     this.hud.dispose();
     this.menuScreen.dispose();
     this.pauseOverlay.dispose();
     this.gameOverScreen.dispose();
     this.victoryScreen.dispose();
+    this.offScreenIndicator.dispose();
     this.postProcessing.dispose();
     this.playerShip.dispose();
     this.enemyProjectileMgr.dispose();
     this.renderer.dispose();
+    EventBus.getInstance().clear();
   }
 }
 

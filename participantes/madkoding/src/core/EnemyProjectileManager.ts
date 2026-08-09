@@ -45,7 +45,7 @@ export class EnemyProjectileManager {
     }
   }
 
-  spawn(position: THREE.Vector3, direction: THREE.Vector3, _speed?: number): void {
+  spawn(position: THREE.Vector3, direction: THREE.Vector3, speed = LASER_SPEED): void {
     const mesh = this.pool.find(m => !m.visible);
     if (!mesh) return;
     this.audio.playEnemyLaser();
@@ -58,13 +58,13 @@ export class EnemyProjectileManager {
     const slot = this.projectiles.find(p => !p.active);
     if (slot) {
       slot.position.copy(position);
-      slot.velocity.copy(dir).multiplyScalar(LASER_SPEED);
+      slot.velocity.copy(dir).multiplyScalar(speed);
       slot.mesh = mesh;
       slot.active = true;
     } else {
       this.projectiles.push({
         position: position.clone(),
-        velocity: dir.multiplyScalar(LASER_SPEED),
+        velocity: dir.multiplyScalar(speed),
         mesh, active: true,
       });
     }

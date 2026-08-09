@@ -304,11 +304,6 @@ export class WaveManager {
     });
   }
 
-  getBossTurretPositions(): THREE.Vector3[] {
-    if (!this.boss || !this.boss.active) return [];
-    return this.boss.getTurretPositions();
-  }
-
   reset(): void {
     this._currentLevel = 0;
     this._currentWave = 0;

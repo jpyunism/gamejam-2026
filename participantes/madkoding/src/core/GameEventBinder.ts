@@ -32,6 +32,7 @@ export class GameEventBinder {
   private waveManager!: WaveManager;
   private callbacks!: GameCallbacks;
   private _currentLevel = 0;
+  private _levelLoadTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(deps: {
     stateManager: StateManager;
@@ -70,6 +71,14 @@ export class GameEventBinder {
   get currentLevel(): number { return this._currentLevel; }
   set currentLevel(v: number) { this._currentLevel = v; }
 
+  /** Cancel a queued level transition (called when quitting to the menu). */
+  cancelPendingLevelLoad(): void {
+    if (this._levelLoadTimer !== null) {
+      clearTimeout(this._levelLoadTimer);
+      this._levelLoadTimer = null;
+    }
+  }
+
   private bindEnemyDestroyed(): void {
     this.eventBus.on(GameEvent.ENEMY_DESTROYED, (p) => {
       this.scoreSystem.add(p.score);
@@ -107,8 +116,12 @@ export class GameEventBinder {
         this.stateManager.transition(GameState.VICTORY);
       } else {
         // Wait for the slow cinematic boss explosion to finish before loading
-        // the next level (~5s matches the 4.5s boss blast + buffer).
-        setTimeout(() => this.callbacks.startLevel(this._currentLevel), 5000);
+        // the next level (~5s matches the 4.5s boss blast + buffer). Guarded
+        // against menu quit so the level can't start in the menu state.
+        this._levelLoadTimer = setTimeout(() => {
+          this._levelLoadTimer = null;
+          if (this.stateManager.isPlaying()) this.callbacks.startLevel(this._currentLevel);
+        }, 5000);
       }
     });
   }
@@ -128,5 +141,9 @@ export class GameEventBinder {
       this.screenEffects.triggerGlitch();
       this.cameraRig.shake(0.6, 0.4);
     });
+  }
+
+  dispose(): void {
+    this.cancelPendingLevelLoad();
   }
 }

@@ -30,18 +30,11 @@ export class Enemy {
   protected _type: string;
   protected eventBus: EventBus;
   protected _age = 0;
-  protected _maxAge = 90;
   protected _velocity = new THREE.Vector3();
   protected _shootTimer = 0;
   protected _shootCooldown = 1.5;
-  protected _ramTimer = 0;
-  protected _ramCooldown = 5;
-  protected _ramDuration = 0.5;
-  protected _ramming = false;
-  protected _ramVelocity = new THREE.Vector3();
   protected _rollSpeed = 0;
   protected _yawSpeed = 0;
-  protected _retreatTimer = 0;
   protected _telegraphTimer = 0;
   protected _isTelegraphing = false;
   protected _burstCount = 0;   // remaining shots in a burst
@@ -75,15 +68,10 @@ export class Enemy {
   protected _hangarPos = new THREE.Vector3();
   protected _flightState: 'EMERGING' | 'APPROACH' | 'ATTACK' | 'OVERFLY' | 'RETURN' = 'EMERGING';
   protected _stateTimer = 0;
-  protected _pirouetteAngle = 0;
-  protected _pirouetteDir = 1;
-  protected _loiterCenter = new THREE.Vector3();
-  protected _loiterPhase = 0;
   protected _overflyDir = new THREE.Vector3(0, 0, 1);
 
   // The player flies forward along -Z at rail speed. Enemies must fly faster
   // than the rail to actually reach and pass the player (like a plane).
-  private _forwardDrift = RAIL.RAIL_SPEED;
   // Constant flight speed for all states — never reduces. Must exceed the rail
   // speed so enemies actually catch up to the player instead of falling behind.
   private _flightSpeed = RAIL.RAIL_SPEED * 1.3;
@@ -147,27 +135,14 @@ export class Enemy {
   get score(): number { return this._score; }
   get speed(): number { return this._speed; }
   get size(): number { return this._size; }
-  get ramming(): boolean { return this._ramming; }
-  get ramVelocity(): THREE.Vector3 { return this._ramVelocity; }
 
   // ── AI queries ──
   canShoot(): boolean { return this._shootTimer >= this._shootCooldown; }
-  canRam(): boolean { return this._ramTimer >= this._ramCooldown && !this._ramming; }
 
   resetShootTimer(): void { this._shootTimer = 0; this._shootCooldown = 1.0 + Math.random() * 1.5; }
-  resetRamTimer(): void { this._ramTimer = 0; this._ramCooldown = 4.0 + Math.random() * 3.0; }
-
-  startRam(targetPos: THREE.Vector3): void {
-    this._ramming = true; this._ramTimer = 0;
-    this._ramDuration = 0.5 + Math.random() * 0.3;
-    const dir = targetPos.clone().sub(this.group.position).normalize();
-    this._ramVelocity.copy(dir).multiplyScalar(this._speed * 2.5);
-  }
-
-  endRam(): void { this._ramming = false; this._ramVelocity.set(0, 0, 0); }
 
   getShootPosition(): THREE.Vector3 {
-    // lookAt orients +Z toward the player, so +Z is the front of the enemy
+    // lookAt orients +Z toward the player (regular Object3D), so +Z is the front
     const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.group.quaternion);
     return this.group.position.clone().add(fwd.multiplyScalar(this._size * 0.8));
   }
@@ -207,12 +182,9 @@ export class Enemy {
     this._active = true; this._age = 0;
     this._velocity.set(0, 0, 0);
     this._shootTimer = Math.random() * this._shootCooldown;
-    this._ramTimer = Math.random() * this._ramCooldown;
-    this._ramming = false; this._ramVelocity.set(0, 0, 0);
     this.group.visible = true;
     this._rollSpeed = (Math.random() - 0.5) * 4;
     this._yawSpeed = (Math.random() - 0.5) * 2;
-    this._retreatTimer = 0;
     this._telegraphTimer = 0;
     this._isTelegraphing = false;
     this._burstCount = 0;
@@ -239,8 +211,6 @@ export class Enemy {
       this._emergenceDuration = 0.8 + Math.random() * 0.6;
       this._emergencePhase = Math.random() * Math.PI * 2;
       this._stateTimer = 0;
-      this._pirouetteAngle = 0;
-      this._pirouetteDir = Math.random() < 0.5 ? -1 : 1;
       this.trail.start(origin);
     } else {
       this._emerging = false;
@@ -529,41 +499,6 @@ export class Enemy {
     onShoot(shootPos, dir);
   }
 
-  private updateRetreat(dt: number, playerPos: THREE.Vector3): void {
-    this._retreatTimer -= dt;
-    const away = this.position.clone().sub(playerPos).normalize();
-    const retreatSpeed = this._speed * 1.5;
-    this.position.x += away.x * retreatSpeed * dt;
-    this.position.y += away.y * retreatSpeed * dt;
-    this.position.z -= retreatSpeed * dt * 0.3;
-    // Clamp retreat so enemies stay within reach of the crosshair
-    const dx = this.position.x - playerPos.x;
-    const dy = this.position.y - playerPos.y;
-    if (Math.abs(dx) > 12) this.position.x = playerPos.x + Math.sign(dx) * 12;
-    if (Math.abs(dy) > 7) this.position.y = playerPos.y + Math.sign(dy) * 7;
-  }
-
-  private dodgeIncomingLasers(projectiles: Projectile[] | undefined, dt: number): void {
-    if (!projectiles) return;
-    for (const proj of projectiles) {
-      if (!proj.active) continue;
-      const d = this.position.distanceTo(proj.position);
-      if (d < 6) {
-        // Check if laser is heading roughly toward the enemy
-        const laserDir = proj.velocity.clone().normalize();
-        const toEnemy = this.position.clone().sub(proj.position).normalize();
-        if (laserDir.dot(toEnemy) > 0.7) {
-          // Laser is coming at us — strafe perpendicular
-          const perp = new THREE.Vector3(-laserDir.z, 0, laserDir.x).normalize();
-          const side = Math.sign(perp.dot(this.position.clone().sub(proj.position)));
-          this.position.x += perp.x * side * this._speed * 2 * dt;
-          this.position.y += (Math.random() - 0.5) * this._speed * dt;
-          break;
-        }
-      }
-    }
-  }
-
   // ── Acrobatics ──
   performAcrobatics(dt: number): void {
     this.body.rotation.z += this._rollSpeed * dt;
@@ -642,37 +577,13 @@ export class Enemy {
     }
   }
 
-  // ── Default update (slow approach, no ram) ──
-  update(dt: number, playerPos: THREE.Vector3): void {
-    if (!this._active) return;
-    this._age += dt;
-    this._shootTimer += dt;
-    this.performAcrobatics(dt);
-
-    // Constant-speed approach toward player center
-    const targetZ = playerPos.z - 5;
-    const target = new THREE.Vector3(playerPos.x, playerPos.y, targetZ);
-    const dir = target.clone().sub(this.group.position);
-    const dist = dir.length();
-    if (dist > 0.1) {
-      dir.normalize();
-      const move = Math.min(this._speed * dt, dist);
-      this.group.position.add(dir.multiplyScalar(move));
-    }
-    this.group.lookAt(playerPos);
-    this.trail.update(dt, this.group.position);
-    if (this._age > this._maxAge) { this._active = false; this.group.visible = false; }
-  }
-
   reset(): void {
     this._active = false; this._age = 0;
     this._health = this._maxHealth;
-    this._shootTimer = 0; this._ramTimer = 0;
-    this._ramming = false; this._ramVelocity.set(0, 0, 0);
+    this._shootTimer = 0;
     this._emerging = false;
     this._flightState = 'EMERGING';
     this._stateTimer = 0;
-    this._loiterPhase = 0;
     this._burstCount = 0; this._burstTimer = 0; this._burstShotIndex = 0;
     this.group.visible = false;
     this.trail.stop();

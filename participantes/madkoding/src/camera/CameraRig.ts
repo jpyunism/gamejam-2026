@@ -17,6 +17,8 @@ export class CameraRig {
 
   private _chasePos = new THREE.Vector3();
   private _chaseLook = new THREE.Vector3();
+  private _desired = new THREE.Vector3();
+  private _desiredLook = new THREE.Vector3();
   private _initialized = false;
 
   constructor(aspect: number) {
@@ -39,13 +41,13 @@ export class CameraRig {
   // for subtle banking feedback.
   setTarget(railPos: { position: THREE.Vector3; forward: THREE.Vector3; up: THREE.Vector3 }, shipOffsetX = 0, shipOffsetY = 0): void {
     // Camera stays on the rail path, slightly above and behind.
-    const desired = new THREE.Vector3()
+    const desired = this._desired
       .copy(railPos.position)
       .addScaledVector(railPos.up, CAMERA.CHASE_UP)
       .addScaledVector(railPos.forward, -CAMERA.CHASE_BACK);
 
     // Look ahead along the rail, never at the ship's screen offset.
-    const desiredLook = new THREE.Vector3()
+    const desiredLook = this._desiredLook
       .copy(railPos.position)
       .addScaledVector(railPos.forward, CAMERA.LOOK_AHEAD)
       .addScaledVector(railPos.up, CAMERA.LOOK_UP);

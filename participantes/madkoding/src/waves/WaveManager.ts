@@ -93,19 +93,7 @@ export class WaveManager {
     // formations of 3-6, assigning formation offsets.
     this._formations = [];
     this._totalEnemies = 0;
-
-    for (const wave of levelDef.waves) {
-      for (const entry of wave.entries) {
-        let remaining = entry.count;
-        while (remaining > 0) {
-          const squadSize = Math.min(remaining, 3 + Math.floor(Math.random() * 4));
-          const formation = this.buildFormation(entry.enemyType, entry.pattern, squadSize);
-          this._formations.push(formation);
-          remaining -= squadSize;
-        }
-        this._totalEnemies += entry.count;
-      }
-    }
+    this._fillFormations(levelDef);
 
     // Create boss if needed
     if (levelDef.hasBoss) {
@@ -126,6 +114,22 @@ export class WaveManager {
     this._enemiesKilled = 0;
 
     this.eventBus.emit(GameEvent.WAVE_START, { wave: 1, totalWaves: this._totalWaves });
+  }
+
+  // Refill the formation queue from the current level definition.
+  private _fillFormations(levelDef: LevelDefinition): void {
+    for (const wave of levelDef.waves) {
+      for (const entry of wave.entries) {
+        let remaining = entry.count;
+        while (remaining > 0) {
+          const squadSize = Math.min(remaining, 3 + Math.floor(Math.random() * 4));
+          const formation = this.buildFormation(entry.enemyType, entry.pattern, squadSize);
+          this._formations.push(formation);
+          remaining -= squadSize;
+        }
+        this._totalEnemies += entry.count;
+      }
+    }
   }
 
   // Build a formation: V, line, or diamond with relative offsets
@@ -171,6 +175,19 @@ export class WaveManager {
   update(dt: number, playerPos: THREE.Vector3, railProgress = 0): void {
     if (this._levelComplete) return;
     this._lastPlayerZ = playerPos.z;
+
+    // Loop formations until the boss stage so the rail is never empty.
+    if (!this._bossActive && !this._spawningStopped && !this._engageMode && this._formationIndex >= this._formations.length) {
+      const levelDef = this._levelDefinitions[this._currentLevel];
+      if (levelDef) {
+        this._formationIndex = 0;
+        this._enemyIndexInFormation = 0;
+        this._waitingForFormation = false;
+        this._intraFormationTimer = 0;
+        this._interFormationTimer = 0;
+        this._fillFormations(levelDef);
+      }
+    }
 
     // ── Formation spawning ──
     // Stop spawning once the boss stage begins (railProgress near 1).

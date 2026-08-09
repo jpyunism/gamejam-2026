@@ -89,7 +89,10 @@ export class RailController {
       .addScaledVector(up, offsetY);
 
     return {
-      position,
+      // Fresh vector: callers hold this across the frame and getRailPosition()
+      // + getWorldPosition() both run in the same frame, so it must not alias
+      // the shared scratch buffer.
+      position: position.clone(),
       forward: tangent.clone(), // Direction of travel
       up: up.clone(),
       tangent: tangent.clone(),

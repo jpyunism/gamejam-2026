@@ -92,7 +92,6 @@ export class EnemyManager {
     enemy.pattern = this.patterns.get(patternName) ?? null;
     enemy.setTunnel(this._tunnelCurve, this._tunnelRadius);
     enemy.init(position, targetPosition, origin);
-    this._activeEnemies.push(enemy);
     return enemy;
   }
 

@@ -179,7 +179,8 @@ export class Enemy {
   init(position: THREE.Vector3, _target: THREE.Vector3, origin?: THREE.Vector3): void {
     this.group.position.copy(origin ? origin.clone() : position);
     this._health = this._maxHealth;
-    this._active = true; this._age = 0;
+    this._active = true;
+    this._age = 0;
     this._velocity.set(0, 0, 0);
     this._shootTimer = Math.random() * this._shootCooldown;
     this.group.visible = true;
@@ -190,6 +191,12 @@ export class Enemy {
     this._burstCount = 0;
     this._burstTimer = 0;
     this._burstShotIndex = 0;
+    this._emerging = false;
+    this._flightState = 'EMERGING';
+    this._stateTimer = 0;
+    this._emergenceProgress = 0;
+    this._approachTarget.set(0, 0, 0);
+    this._overflyDir.set(0, 0, 1);
 
     // Random per-enemy approach offset so each enemy aims at its own point
     // near the player instead of all converging on the exact same spot.

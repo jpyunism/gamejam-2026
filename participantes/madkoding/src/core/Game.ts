@@ -131,7 +131,7 @@ export class Game {
 
     this.hud = new HUD();
     this.livesDisplay = new LivesDisplay();
-    this.menuScreen = new MenuScreen(() => this.startGame());
+    this.menuScreen = new MenuScreen((levelIndex) => this.startGame(levelIndex));
     this.pauseOverlay = new PauseOverlay({
       resume: () => this.resumeGame(),
       quit: () => this.returnToMenu(),
@@ -231,9 +231,10 @@ export class Game {
     this.hud.setVisible(true);
     this.musicPlayer.play();
     this.levelManager.reset();
-    // Start at level 0 (Primer Vuelo) so the player always gets the tutorial
-    // intro before the difficulty ramps.
-    this.startLevel(0);
+    // Random first level so the player can preview the different terrain /
+    // skybox types available across the 20 levels on each new run.
+    const randomLevel = Math.floor(Math.random() * this.levelManager.totalLevels);
+    this.startLevel(randomLevel);
     // First start: show ENGAGE before enemies spawn. Must be set AFTER
     // startLevel() because waveManager.reset() clears _engageMode.
     this.waveManager.setEngageMode(true);

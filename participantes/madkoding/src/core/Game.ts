@@ -29,7 +29,9 @@ import { FxDirector } from '../fx/FxDirector';
 import { LavaEruptions } from '../environment/LavaEruptions';
 import { SpaceScenery } from '../environment/SpaceScenery';
 import { setRailShape } from '../environment/RailShape';
-import { hasGround } from '../environment/TerrainField';
+import { hasGround, liquidAt, getBiomeProfile } from '../environment/TerrainField';
+import { WaterWake } from '../environment/WaterWake';
+import { setCityNight, streetLampHit } from '../environment/CityStreets';
 import { FOG_NEAR, FOG_FAR } from '../environment/TerrainManager';
 import { TerrainManager } from '../environment/TerrainManager';
 import { TerrainDecorations } from '../environment/TerrainDecorations';
@@ -85,6 +87,7 @@ export class Game {
   private terrainManager: TerrainManager;
   private terrainDecorations: TerrainDecorations;
   private skybox: Skybox;
+  private waterWake: WaterWake;
   private powerUpManager: PowerUpManager;
   private obstacleManager: ObstacleManager;
   private lifeManager: PlayerLifeManager;
@@ -124,6 +127,7 @@ export class Game {
   // Boost / movement
   private _boostMeter = 1;
   private _boosting = false;
+  private _lampCooldown = 0;
   private _knockX = 0;
   private _knockY = 0;
   private _locked = false;
@@ -169,6 +173,7 @@ export class Game {
     this.skybox = new Skybox(this.scene, this.cameraRig.camera3D);
     this.lavaEruptions = new LavaEruptions(this.scene);
     this.spaceScenery = new SpaceScenery(this.scene, this.cameraRig.camera3D);
+    this.waterWake = new WaterWake(this.scene);
     // Keep fog + water reflections in sync with the active sky photo.
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.skybox.onSkyChange = (tex, horizon) => {
@@ -525,6 +530,7 @@ export class Game {
     this.lavaEruptions.reset();
     this.lifeManager.reset();
     this.terrainManager.reset();
+    this.waterWake.reset();
     this.terrainDecorations.reset();
     this.offScreenIndicator.reset();
     this.announcer.clear();
@@ -585,6 +591,11 @@ export class Game {
     this.spaceScenery.update(ambientDt);
     this.updateSunShadows();
     this.fx.update(rawDt, state === GameState.PAUSED);
+    // Planar water reflection; follows the adaptive quality fallback.
+    const liquids = this.terrainManager.liquids;
+    liquids.reflections = this.postProcessing.aoEnabled;
+    const lv = hasGround() ? liquidAt(this.playerShip.position.z) : null;
+    if (lv !== null) liquids.renderReflection(this.renderer, this.cameraRig.camera3D, lv, [this.skybox.object, this.spaceScenery.object]);
     this.postProcessing.render(rawDt);
   };
 
@@ -836,9 +847,12 @@ export class Game {
     this.weaponSystem.update(dt, this.playerShip.position);
     this.backgroundShips.update(dt, this.playerShip.position);
     this.terrainManager.update(dt, this.playerShip.position, this.cameraRig.camera3D.position);
+    const shipP = this.playerShip.position;
+    this.waterWake.update(dt, shipP, hasGround() ? liquidAt(shipP.z) : null, getBiomeProfile()?.liquid === 'lava', this._speedMult);
     this.terrainDecorations.update(dt, this.playerShip.position);
     this.waveManager.corvettePositions = this.backgroundShips.positions;
     this.waveManager.update(dt, this.playerShip.position, this.railController.stageProgress, this.railController.progress);
+    setCityNight(this.railController.stageProgress);
 
     const playerProjectiles = this.weaponSystem.projectilesList.filter(p => p.active && p.isPlayerProjectile);
     this.enemyManager.setFrame(railCameraPos);
@@ -899,6 +913,18 @@ export class Game {
       this.hitSpark.spawn(this.playerShip.position.clone(), 0xff6622, 1.4);
       this.cameraRig.addTrauma(0.45);
       this.fx.flash(0.2, 0xff5500, 4);
+    }
+    // Street lights on the city avenue are solid too.
+    this._lampCooldown = Math.max(0, this._lampCooldown - dt);
+    const lamp = this._lampCooldown <= 0 && !invulnerable ? streetLampHit(this.playerShip.position) : null;
+    if (lamp) {
+      this._lampCooldown = 0.8;
+      this.playerShip.takeDamage(10);
+      this.hitSpark.spawn(this.playerShip.position.clone(), 0xffcc66, 1.1);
+      this.cameraRig.addTrauma(0.35);
+      const right = shipWorldPos.forward.clone().cross(shipWorldPos.up).normalize();
+      this._knockX += lamp.dot(right) * 0.08;
+      this._knockY += lamp.dot(shipWorldPos.up) * 0.08;
     }
     if (obs.hit && !invulnerable) {
       this.playerShip.takeDamage(15);
@@ -1045,6 +1071,7 @@ export class Game {
     this.skybox.dispose();
     this.lavaEruptions.dispose();
     this.spaceScenery.dispose();
+    this.waterWake.dispose();
     this.powerUpManager.dispose();
     this.obstacleManager.dispose();
     this.audioManager.dispose();

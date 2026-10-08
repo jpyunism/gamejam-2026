@@ -55,14 +55,18 @@ El esquema activo (mouse o teclado/gamepad) sigue al último dispositivo usado.
 
 - **Terreno por chunks** hasta el horizonte (±1000 u de ancho, 2200 de profundidad) con LOD y faldones; se genera una vez por chunk, no por frame.
 - **Valle o cañón que sigue al riel**: el camino serpentea entre cordilleras de crestas reales, con paleta por altura y pendiente (playa, pasto, roca, nieve en cumbres) y niebla del color exacto del horizonte del cielo.
-- **Agua** con oleaje, Fresnel, reflejo del cielo del bioma y destello del sol; **lava** con corteza agrietada, flujo y **erupciones** (burbujas que se hinchan y revientan en fuentes de magma que dañan).
+- **Agua** con oleaje, Fresnel, reflejo del cielo del bioma, **reflejo planar real** (nave, enemigos, obstáculos y montañas; se apaga solo si baja el rendimiento), **espuma en la orilla** y destello del sol; **lava** con corteza agrietada, flujo y **erupciones** (burbujas que se hinchan y revientan en fuentes de magma que dañan).
+- **Estela al rasar**: volar bajo sobre agua levanta spray y anillos de onda; sobre lava, brasas y anillos fundidos. Las orillas de lava brillan.
+- **Vegetación y estructuras**: árboles con viento, rocas, árboles secos, edificios con ventanas iluminadas y cristales luminosos, instanciados por chunk según bioma y pendiente.
+- **Biomas cueva y ciudad** en uso: *Cuevas de Cristal* (túnel con cristales cian) e *Infierno de Metal*: avenida con carriles pintados, veredas y faroles (cono de luz + charcos de luz en el asfalto) entre rascacielos cuyas ventanas muestran **interiores con parallax** ([three-fenestra](https://github.com/codedgar/three-fenestra), MIT) en un solo material instanciado, con cortinas/persianas retroiluminadas y ventanas que se encienden una a una a medida que cae la noche. Tráfico en ambos sentidos (faros, luces traseras y haz en el asfalto), letreros de neón que parpadean, balizas rojas en azoteas y faroles sólidos (chocar con uno daña la nave).
 - **Espacio** con planeta en el horizonte (continentes, gigante gaseoso con anillos, mundo muerto agrietado, mundo helado con aurora) y cinturón de asteroides con paralaje.
-- **Obstáculos reales en la franja de vuelo**: agujas de roca, arcos que hay que cruzar por el hueco, cristales destructibles, estalactitas, pilones y asteroides a la deriva, con colisión tipo cápsula para nave y láseres.
+- **Obstáculos reales en la franja de vuelo**: agujas de roca, arcos que hay que cruzar por el hueco, cristales destructibles, estalactitas, pilones y asteroides a la deriva, con colisión tipo cápsula para nave y láseres. Se reparten con separación mínima entre sí y espaciado irregular para dejar espacio de maniobra; las agujas son curvas e inclinadas (la colisión sigue la curva).
 - **Realismo**: oclusión ambiental horneada en el terreno + GTAO en pantalla (adaptativa), iluminación por imagen (IBL) desde la foto del cielo y sombras del sol que siguen a la nave.
 
 ## Stack tecnológico
 
 - **Three.js** `^0.160.0` — renderizado 3D.
+- **three-fenestra** `^0.3.0` — interior mapping para las ventanas de la ciudad.
 - **TypeScript** `^5.4.0` — tipado estático.
 - **Vite** `^8.2.0` — bundler y dev server.
 - **@types/three** `^0.185.3` — tipos para Three.js.

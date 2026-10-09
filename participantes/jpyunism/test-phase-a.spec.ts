@@ -4,9 +4,9 @@ import { test, expect } from "@playwright/test";
  * Regression suite for the Phase A fixes.
  *
  * Every test here pins a bug that was reproduced and measured on the real
- * runtime (see docs/ANALISIS-MEJORAS.md). The game is driven through the
- * production build on the dev server; assertions read live scene state via the
- * `window.__game` handle exposed by src/main.ts.
+ * runtime (see docs/ANALISIS-MEJORAS.md). The game is driven through the dev
+ * server; assertions read live scene state via the `window.__game` handle
+ * exposed by src/main.ts.
  */
 
 /** Boot the menu, lock in two weapons and enter the arena. */
@@ -55,9 +55,10 @@ test.describe("Neon Drift — Phase A regressions", () => {
     });
     await page.waitForTimeout(1500);
 
-    // While dead, the old run's wave timers must already be gone.
     const afterDeath = await readState();
     expect(afterDeath.active).toBe(false);
+    // The old run's wave timers must be torn down on shutdown.
+    expect(afterDeath.waveTimers).toBe(false);
 
     await page.keyboard.press("r");
     await page.waitForTimeout(2200);
@@ -70,6 +71,7 @@ test.describe("Neon Drift — Phase A regressions", () => {
     expect(run2.piercing).toBe(false);
     expect(run2.chainReaction).toBe(false);
     expect(run2.colliders).toBe(run1.colliders);
+    expect(run2.beamRef).toBe(false);
   });
 
   test("enemy projectiles are culled instead of parking against the wall", async ({ page }) => {
@@ -157,8 +159,7 @@ test.describe("Neon Drift — Phase A regressions", () => {
     expect(out.landed).toBeGreaterThan(0);
     expect(out.landed).toBeLessThanOrEqual(9);
     // The overlap is still allowed to fire per-frame; it just must not damage.
-    // Allow a small margin on the call count (one extra callback can slip in
-    // right on a window boundary).
+    // Allow a small margin (one extra callback can slip in on a window edge).
     expect(out.calls).toBeLessThanOrEqual(out.landed + 1);
   });
 

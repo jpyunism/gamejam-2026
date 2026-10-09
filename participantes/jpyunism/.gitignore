@@ -1,1 +1,5 @@
 .atl/
+
+# Artefactos de indexación local (codegraph / graphify) — no van al repo
+.codegraph/
+graphify-out/

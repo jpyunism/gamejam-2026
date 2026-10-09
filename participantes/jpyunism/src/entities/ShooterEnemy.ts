@@ -24,6 +24,12 @@ export class ShooterEnemy extends Enemy {
       return;
     }
 
+    // Knockback owns the velocity for a few frames after a landed hit; skip
+    // steering so `physics.moveTo` doesn't cancel the impulse immediately.
+    if (this.isKnockedBack(time)) {
+      return;
+    }
+
     const dx = playerX - this.x;
     const dy = playerY - this.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -41,7 +47,8 @@ export class ShooterEnemy extends Enemy {
     // Always face the player.
     this.rotation = Math.atan2(dy, dx);
 
-    // Fire on cadence.
+    // Fire on cadence. Suppressed during knockback (handled above) so a pushed
+    // shooter doesn't get a free point-blank shot.
     if (time - this.lastFiredAt >= this.fireInterval) {
       this.fire(playerX, playerY);
       this.lastFiredAt = time;
@@ -49,32 +56,25 @@ export class ShooterEnemy extends Enemy {
   }
 
   private fire(playerX: number, playerY: number): void {
+    const group = this.scene.data.get("enemyProjectiles") as Phaser.Physics.Arcade.Group | undefined;
+    // Check the pool BEFORE creating anything. Creating first and relying on
+    // `group.add()` to reject the overflow leaves an orphan sprite with a
+    // physics body loose in the scene (the group returns early when full).
+    if (!group || group.isFull()) {
+      return;
+    }
+
     const angle = Phaser.Math.Angle.Between(this.x, this.y, playerX, playerY);
     const vx = Math.cos(angle) * 200;
     const vy = Math.sin(angle) * 200;
 
     const projectile = this.scene.add.circle(this.x, this.y, 5, 0xffff00);
-
-    // Add to the enemy projectiles group FIRST so the group owns the body.
-    // Setting velocity after group.add() ensures the group doesn't reset it.
-    const group = this.scene.data.get("enemyProjectiles") as Phaser.Physics.Arcade.Group | undefined;
-    if (group && !group.isFull()) {
-      group.add(projectile);
-    } else {
-      // Pool exhausted (or missing): skip the shot. group.add() silently
-      // bails when full and never creates a body, so firing here would
-      // crash on a null body. Dropping the shot is safe game behavior.
-      projectile.destroy();
-      return;
-    }
+    group.add(projectile);
 
     const body = projectile.body as Phaser.Physics.Arcade.Body;
+    // Do NOT enable collideWorldBounds: it only zeroes the velocity once the
+    // body reaches the border, leaving an inert projectile parked against the
+    // wall. We cull by bounds instead (see GameScene.cullOutOfBounds).
     body.setVelocity(vx, vy);
-    body.setCollideWorldBounds(true);
-    body.onWorldBounds = true;
-
-    projectile.once("worldbounds", () => {
-      projectile.destroy();
-    });
   }
 }

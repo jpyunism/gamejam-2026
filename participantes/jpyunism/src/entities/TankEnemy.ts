@@ -14,12 +14,18 @@ export class TankEnemy extends Enemy {
   }
 
   public update(
-    _time: number,
+    time: number,
     _delta: number,
     playerX: number,
     playerY: number,
   ): void {
     if (!this.isAlive) {
+      return;
+    }
+
+    // Knockback owns the velocity for a few frames after a landed hit; skip
+    // steering so `physics.moveTo` doesn't cancel the impulse immediately.
+    if (this.isKnockedBack(time)) {
       return;
     }
 

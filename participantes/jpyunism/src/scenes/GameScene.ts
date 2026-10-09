@@ -15,11 +15,12 @@ import { HUD } from "../ui/HUD";
 import { AudioManager } from "../audio/AudioManager";
 import { SettingsPanel } from "../ui/SettingsPanel";
 import { EventBus, SPECTACLE_ENTRANCE, SPECTACLE_ACTION, SPECTACLE_HIT } from "../core/EventBus";
-import { GAME } from "../core/Constants";
+import { GAME, ENEMY } from "../core/Constants";
 import { VirtualJoystick } from "../systems/VirtualJoystick";
 import { FireButton } from "../systems/FireButton";
 import { MobileBootstrap } from "../systems/MobileBootstrap";
 import { RotateOverlay } from "../systems/RotateOverlay";
+import { TouchButton } from "../ui/TouchButton";
 
 /** Battle-track pool. Keys are mirrored in the preload() loader below. */
 const BATTLE_TRACK_KEYS = [
@@ -60,6 +61,8 @@ export class GameScene extends Phaser.Scene {
   private mobileBootstrap: MobileBootstrap | null = null;
   /** Rotate overlay for portrait orientation. */
   private rotateOverlay: RotateOverlay | null = null;
+  /** Touch-accessible pause button (hidden on non-touch devices). */
+  private pauseButton: TouchButton | null = null;
   /**
    * Weapon IDs chosen by the player in MenuScene. Defaults to Plasma + Pulse
    * if MenuScene didn't pass any (e.g. restart from GameOverScene with no
@@ -211,17 +214,31 @@ export class GameScene extends Phaser.Scene {
     this.enemyProjectiles = this.physics.add.group({ maxSize: 30 });
     this.data.set("enemyProjectiles", this.enemyProjectiles);
 
-    // Player-enemy contact damage (real damage now, not just a log)
+    // Player-enemy contact damage. Contact must resolve ONCE per enemy per
+    // i-frame window: the overlap fires on every frame of contact (measured 180
+    // calls/second with three enemies stacked on the player), and each call
+    // used to refresh the invulnerability timer, so a crowd produced continuous
+    // damage instead of readable hits.
     this.physics.add.overlap(this.player, this.enemies, (_player, enemy) => {
       const p = _player as Player;
       const e = enemy as Enemy;
-      if (p.isAlive && e.isAlive) {
-        if (p.tempShieldActive === true) {
-          // Temp shield absorbs one hit then breaks.
-          p.tempShieldActive = false;
-          return;
-        }
-        p.takeDamage(e.damage, this.time.now);
+      if (!p.isAlive || !e.isAlive) {
+        return;
+      }
+      const now = this.time.now;
+      if (p.tempShieldActive === true) {
+        // Temp shield absorbs one hit then breaks.
+        p.tempShieldActive = false;
+        this.knockBackEnemy(e, p);
+        return;
+      }
+      if (p.isInvulnerable(now)) {
+        return;
+      }
+      if (p.takeDamage(e.damage, now)) {
+        // Only push back on a hit that actually landed, so enemies can keep
+        // pressing while the player is still protected.
+        this.knockBackEnemy(e, p);
       }
     });
 
@@ -302,6 +319,30 @@ export class GameScene extends Phaser.Scene {
     this.hud = new HUD(this);
     this.hud.coins = this.runCoins;
 
+    // Touch pause: ESC was the only way into the pause/settings overlay, which
+    // left phones with no way to pause or reach the settings panel. Placed just
+    // below the top-right status panel so it doesn't cover the HUD, and given a
+    // depth above it.
+    const pauseW = 64;
+    const pauseH = 30;
+    this.pauseButton = new TouchButton(
+      this,
+      width - pauseW / 2 - 10,
+      Math.round(10 + 50 * (width / 1280)) + pauseH / 2 + 8,
+      pauseW,
+      pauseH,
+      "II",
+      {
+        onClick: () => this.togglePause(),
+        borderColor: 0xffaa00,
+        textColor: "#ffaa00",
+        depth: 1000,
+      },
+    );
+    if (!TouchButton.hasTouch()) {
+      this.pauseButton.setVisible(false);
+    }
+
     // Spectacle: entrance — player and enemies are now in the arena
     EventBus.emit(SPECTACLE_ENTRANCE, { x: this.player.x, y: this.player.y });
 
@@ -310,6 +351,13 @@ export class GameScene extends Phaser.Scene {
       this.handleResize(gameSize.width, gameSize.height);
     };
     this.scale.on("resize", this.resizeHandler);
+
+    // Wire the scene's shutdown hook. Phaser calls `init()` and `create()` by
+    // name but NEVER calls `shutdown()` — it only emits a SHUTDOWN event — so a
+    // `shutdown()` method on its own is dead code. Without this, every run leaks
+    // its colliders, keyboard listeners, resize handler, obstacle group and the
+    // WaveManager's timers (which keep spawning into the next run).
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
   }
 
   /**
@@ -363,10 +411,27 @@ export class GameScene extends Phaser.Scene {
     this.fireButton?.destroy();
     this.mobileBootstrap?.destroy();
     this.rotateOverlay?.destroy();
+    this.pauseButton?.destroy();
+    this.pauseButton = null;
     if (this.resizeHandler) {
       this.scale.off("resize", this.resizeHandler);
       this.resizeHandler = null;
     }
+
+    // --- State that lives on the SCENE, not on a system ---
+    // `scene.data` survives a shutdown/start cycle, so every power-up flag must
+    // be cleared here or the next run inherits the buffs from the last one.
+    for (const key of [
+      "piercing-shots-active",
+      "explosion-on-kill-active",
+      "triple-shot-active",
+      "enemyGroup",
+      "projectileGroup",
+      "enemyProjectiles",
+    ]) {
+      this.data.remove(key);
+    }
+
     // Clean up persistent electric beam graphics
     const beamGfx = this.data.get("electricBeamGraphics") as Phaser.GameObjects.Graphics | undefined;
     if (beamGfx) {
@@ -379,6 +444,22 @@ export class GameScene extends Phaser.Scene {
       t.remove(false);
     }
     this.data.set("fireZoneTimers", []);
+
+    // --- Physics ---
+    // The colliders belong to the WORLD (which is shared across scene restarts),
+    // so they must be destroyed explicitly or they accumulate and fire on every
+    // subsequent run with handles to destroyed objects.
+    for (const c of this.obstacleColliders) {
+      c.destroy();
+    }
+    this.obstacleColliders = [];
+    this.obstacles?.destroy(true);
+    this.bgGrid?.destroy();
+    this.bgGrid = null;
+    this.playerGlow?.destroy();
+    this.playerGlow = null;
+    this.pauseOverlay?.destroy(true);
+    this.pauseOverlay = null;
   }
 
   /**
@@ -497,6 +578,24 @@ export class GameScene extends Phaser.Scene {
     fire.fillCircle(8, 8, 7);
     fire.generateTexture("projectile-fire", 16, 16);
     fire.destroy();
+  }
+
+  /**
+   * Pushes an enemy away from the player after a landed hit.
+   *
+   * Without this the chaser keeps pressing into the player and re-triggers on
+   * the next frame the i-frames open, so a single enemy can drain the whole
+   * shield in under a second. The impulse is deliberately short (one tween over
+   * `ENEMY.KNOCKBACK_MS`): enough to read the hit and give the player room,
+   * not enough to break pursuit.
+   */
+  private knockBackEnemy(enemy: Enemy, player: Player): void {
+    enemy.startKnockback(
+      ENEMY.KNOCKBACK_SPEED,
+      enemy.x - player.x,
+      enemy.y - player.y,
+      this.time.now,
+    );
   }
 
   private onProjectileHitEnemy(
@@ -686,12 +785,19 @@ export class GameScene extends Phaser.Scene {
       overlay.add(backdrop);
 
       const pauseText = this.add
-        .text(width / 2, height / 2 - 130, "PAUSED\nPress ESC to resume", {
-          fontFamily: "monospace",
-          fontSize: "32px",
-          color: "#00ffff",
-          align: "center",
-        })
+        .text(
+          width / 2,
+          height / 2 - 130,
+          TouchButton.hasTouch()
+            ? "PAUSED\nTap II again to resume"
+            : "PAUSED\nPress ESC to resume",
+          {
+            fontFamily: "monospace",
+            fontSize: "32px",
+            color: "#00ffff",
+            align: "center",
+          },
+        )
         .setOrigin(0.5)
         .setScrollFactor(0);
       overlay.add(pauseText);
@@ -767,8 +873,10 @@ export class GameScene extends Phaser.Scene {
       this.player.tryFire(time);
     }
 
-    // Cull projectiles that have flown past their weapon's range.
+    // Cull projectiles that have flown past their weapon's range, and enemy
+    // projectiles that left the arena.
     this.cullOutOfRangeProjectiles();
+    this.cullOutOfBoundsProjectiles();
 
     this.waveManager.update(time, delta);
     this.levelUpManager.update(time);
@@ -781,6 +889,37 @@ export class GameScene extends Phaser.Scene {
     // HUD last — it reads the latest state from the systems.
     this.hud.coins = this.runCoins;
     this.hud.update(this.player, this.waveManager, this.levelUpManager, time);
+  }
+
+  /**
+   * Removes enemy projectiles that have left the arena.
+   *
+   * `ShooterEnemy` used to rely on `body.setCollideWorldBounds(true)` plus a
+   * `worldbounds` listener on the sprite to clean up. Neither works: Phaser 4
+   * emits `worldbounds` on the WORLD (not the GameObject, so the listener never
+   * fired) and `collideWorldBounds` only zeroes the velocity at the border —
+   * leaving the projectile permanently parked against the wall. Measured: 16 of
+   * 19 live projectiles were inert against the wall after 70 s, filling a
+   * 30-slot pool. Culling by bounds is deterministic and pool-agnostic.
+   */
+  private cullOutOfBoundsProjectiles(): void {
+    const margin = 24;
+    const maxX = this.arenaWidth + margin;
+    const maxY = this.arenaHeight + margin;
+    const children = this.enemyProjectiles.getChildren() as Phaser.GameObjects.Arc[];
+    for (const proj of children) {
+      if (!proj.active) {
+        continue;
+      }
+      if (
+        proj.x < -margin ||
+        proj.y < -margin ||
+        proj.x > maxX ||
+        proj.y > maxY
+      ) {
+        proj.destroy();
+      }
+    }
   }
 
   private cullOutOfRangeProjectiles(): void {

@@ -65,8 +65,17 @@ export class WaveManager {
   /**
    * Spawns one random enemy at a random edge of the visible camera, clamped
    * to the arena. Mix: 60% Chaser / 40% Shooter.
+   *
+   * Bails out when the pool is full BEFORE instantiating: `Group.add()` returns
+   * early without registering the child when `isFull()`, so creating an enemy
+   * first and adding it after leaves an orphan sprite with a physics body that
+   * chases and renders but can never be hit (the damage overlaps iterate the
+   * group) nor cleaned up.
    */
   public spawnEnemy(): void {
+    if (this.enemies.isFull()) {
+      return;
+    }
     const pick = Phaser.Math.Between(1, 100);
     let enemy: Enemy;
     if (pick <= 60) {
@@ -83,31 +92,37 @@ export class WaveManager {
   /**
    * Spawns a burst of enemies (8-12 mixed + 1-2 Tanks), bumps the wave
    * counter, and marks the horde window active for 10 seconds.
+   *
+   * The wave counter only advances when the horde actually contributed enemies,
+   * so a saturated pool no longer announces a difficulty step that never
+   * happened.
    */
   public triggerHorde(): void {
-    this.waveNumber += 1;
-    this.enemiesKilledThisWave = 0;
-    this.difficultyMultiplier = 1.0 + this.waveNumber * 0.1;
-    this.isHordeActive = true;
+    const before = this.enemies.getChildren().length;
 
     const mixedCount = Phaser.Math.Between(6, 10);
     for (let i = 0; i < mixedCount; i++) {
-      const enemy =
-        Phaser.Math.Between(1, 100) <= 60
-          ? new ChaserEnemy(this.scene, 0, 0)
-          : new ShooterEnemy(this.scene, 0, 0);
-      this.enemies.add(enemy);
-      const pos = this.pickSpawnPosition();
-      enemy.setPosition(pos.x, pos.y);
+      this.spawnEnemy();
     }
 
     const tankCount = 1;
     for (let i = 0; i < tankCount; i++) {
+      if (this.enemies.isFull()) {
+        break;
+      }
       const tank = new TankEnemy(this.scene, 0, 0);
       this.enemies.add(tank);
       const pos = this.pickSpawnPosition();
       tank.setPosition(pos.x, pos.y);
     }
+
+    const spawned = this.enemies.getChildren().length - before;
+    if (spawned > 0) {
+      this.waveNumber += 1;
+      this.difficultyMultiplier = 1.0 + this.waveNumber * 0.1;
+    }
+    this.enemiesKilledThisWave = 0;
+    this.isHordeActive = true;
 
     // Clear the horde-active flag after the window elapses.
     this.hordeActiveTimer?.remove(false);

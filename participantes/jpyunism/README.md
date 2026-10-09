@@ -35,7 +35,13 @@ En un teléfono, los controles aparecen automáticamente al tocar la pantalla:
 | Joystick izquierdo | Moverse |
 | Joystick derecho | Apuntar |
 | Botón rojo FIRE | Disparar (un disparo por toque) |
+| Botón `II` (arriba a la derecha) | Pausar / ajustes |
 | Tap inicial | Solicita pantalla completa |
+
+En la pantalla de Game Over los botones **RESTART**, **MAIN MENU** y **SHOP** se
+tocan directamente, igual que las filas de la tienda (para comprar) y su botón
+**CLOSE**. Antes esas acciones solo existían como teclas `R`/`M`/`S` e `1-5`, así que
+un jugador de teléfono quedaba encerrado al morir.
 
 El juego funciona en landscape (horizontal). Si el dispositivo está en vertical,
 aparece un overlay pidiendo rotar el dispositivo.

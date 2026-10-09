@@ -26,46 +26,60 @@ declara y lo que el juego hace.
 
 ## 1. Bloqueantes — bugs verificados con evidencia
 
-### B1. Te matan obstáculos, no enemigos
+### B1. Los enemigos NO se atascan en los pilares (hipótesis propia, refutada)
 
-Los enemigos se atascan contra los pilares y, mientras empujan sin moverse, siguen
-haciendo daño de contacto.
+Mi primera medición sugería enemigos congelados con velocidad completa. **La
+verifiqué mejor y era falsa**, y lo dejo escrito porque es más importante decirlo
+que salvar la hipótesis.
 
-**[verificado]** Partida instrumentada, 56 enemigos vivos al minuto y medio; **28 de
-ellos con velocidad completa (110 px/s) y menos de 6 px recorridos en 10 s**, todos
-pegados a un pilar. Forzando el caso exacto (spawn alineado con un pilar):
+La medición original contaba 28 enemigos "con velocidad 110 px/s y menos de 6 px
+recorridos en 10 s". Al revisar los datos crudos, esos 28 estaban a **0-4 px del
+jugador** (no en un pilar) y a **220 px del obstáculo más cercano**: eran cuerpos
+apilados sobre el jugador, que el `setVelocity` re-resuelve cada frame.
+
+Test dirigido después: **72 enemigos sembrados contra 24 pilares** (en arco denso del
+lado del jugador, a 14/22/34 px del borde, con el jugador inmóvil al otro lado),
+16 muestras a lo largo de 8 s:
 
 ```
-pillar at 302,414 (30px) → spawned 302,440 → 12 s después sigue en 302,441
-distancia al jugador: 2 px   velocity: 110 px/s   moved: 1 px
+totalTested: 72   stuckOnPillar: 0   reachedPlayer: 42
 ```
 
-Cuando el jugador pasa cerca, 3-4 enemigos congelados drenan 10 HP por toque.
-En una corrida de ~30 s se midieron **325 eventos de daño / 157,8 HP perdidos**.
+**Cero atascos.** `physics.moveTo()` re-fija la velocidad en cada frame, así que
+Phaser desliza al enemigo por el borde del pilar y lo rodea. El desplazamiento por
+ejes que iba a implementar **no hace falta**: no arreglaría nada.
 
-Causa: `Phaser.Physics.Arcade.Body.blocked` marca el eje bloqueado, y
-`body.velocity` sigue apuntando contra la pared (Phaser solo anula el vector de
-posición en `postUpdate`; la velocidad se queda).
+Descartado. No entra en la Fase A.
 
-**Arreglo propuesto:** separación por ejes en `Enemy.update()` (probar X e Y por
-separado, y si un eje está bloqueado, deslizar por el otro) + un timeout de atasco
-que empuje al enemigo fuera del pilar. Es ~15 líneas en la clase base `Enemy`.
+### B2. El pool de enemigos se desborda y deja sprites fantasma (real, pero cosmético/perf)
 
-### B2. El pool de enemigos se desborda y deja enemigos fantasma
+`this.enemies = this.physics.add.group({ maxSize: 80 })`. **[verificado]** Usando la
+ruta real de spawn: **200 sprites en escena, 80 en el grupo**, `isFull() === true`.
+Los 120 extra quedan creados y dibujados, pero fuera del grupo.
 
-`this.enemies = this.physics.add.group({ maxSize: 80 })`.
+**Corrección a mi informe anterior:** dije que esos fantasmas "te persiguen, te hacen
+daño y el juego no puede matarlos". Lo medí y **el daño es 0**: el overlap
+`player ↔ enemies` recorre el **grupo**, así que un sprite fuera del grupo no puede
+colisionar.
 
-**[verificado]** Spawneando 200 enemigos por la ruta real del juego:
-**200 sprites existen en la escena, solo 80 están en el grupo**, `isFull() === true`.
-Los 120 restantes son fantasmas: sprites con física, dibujados en pantalla, que
-persiguen al jugador y hacen daño — y que **el juego no puede matar** (los overlaps
-de proyectiles solo recorren el grupo) **ni limpiar nunca**.
+**[verificado]** Puse un fantasma exactamente encima del jugador durante 4 s:
+`damageFromGhost: 0`, HP 100 → 100.
 
-Peor: con el grupo lleno, `waveManager.triggerHorde()` **igual incrementa el número de
-oleada** (se verificó subiendo a oleada 2 sin añadir un solo enemigo). El HUD anuncia
-una dificultad que no existe, y los fantasmas acumulados son los que te matan.
+Lo que sí queda en pie:
 
-### B3. Los proyectiles enemigos atraviesan el muro perimetral y nunca se limpian
+- Los fantasmas **sí se dibujan y sí ejecutan su `update()`** (persiguen) porque siguen
+  en la display list. El jugador ve enemigos que no puede matar: confuso, y son
+  sprites y física gratis cada frame (~120 objetos).
+- `triggerHorde()` **incrementa el número de oleada aunque no pueda añadir nada**: el
+  HUD anuncia dificultad inexistente.
+- Con una partida real **competente** el grupo se mantiene en 6-14 de 80: **no se
+  satura en juego normal**. Solo se dispara con spawns fuera de rango.
+
+**Reclasificado a calidad**: no es un bug de gameplay, es basura visual + deuda. Va a
+Fase B, no a Fase A. El arreglo sigue siendo barato: `if (group.isFull()) return;`
+**antes** de instanciar.
+
+### B3. Los proyectiles enemigos se congelan en el muro y nunca se liberan (el peor de todos)
 
 `ShooterEnemy.fire()` hace:
 
@@ -77,15 +91,30 @@ projectile.once("worldbounds", () => projectile.destroy());
 En Phaser 4 el evento `worldbounds` lo emite **`World`**, no el GameObject. El
 listener del sprite nunca dispara.
 
-**[verificado]** Proyectil en `(1200,100)` a 400 px/s hacia la derecha:
-se detiene en `x = 1275` (el muro mide 8 px y empieza en 1272), el evento
-`worldbounds` del sprite se emitió **0 veces**, el del mundo **1 vez**, y el
-proyectil sigue `active: true` **indefinidamente**.
+**[verificado]** Proyectil a 400 px/s hacia la derecha: se detiene en `x = 1275` (el
+muro empieza en 1272) con `vx = 0` y **sigue `active: true` durante los 12,5 s del
+test**, sin desaparecer nunca. El evento del sprite se emitió 0 veces; el del mundo, 1.
 
-Escala: cada shooter dispara cada 2,5 s (≈24/min). Con 6 shooters son ≈144
-proyectiles/min de basura. El pool es de 30 → se satura en ~13 s. Con el pool lleno,
-`group.add()` no hace nada y el círculo recién creado queda **otra vez como fantasma**
-(mismo patrón que B2). **[verificado]:** 360 llamadas a `add()` sin efecto.
+**[verificado] Este es el hallazgo con consecuencia de gameplay real, y es peor de lo
+que escribí:**
+
+| Medición (70 s de juego con un jugador inmortal) | Valor |
+|---|---|
+| Disparos que entraron al grupo | 100 |
+| Proyectiles vivos al terminar | **19** |
+| De esos, congelados en el muro | **16** |
+| Tamaño del pool | 30 |
+
+Es decir: **el ~84 % de los proyectiles vivos están pegados al muro acumulando basura**,
+y en 70 s el pool quedó al 63 % (19/30) solo porque el jugador estaba quieto. El pool
+es de 30: con un jugador que se mueve por la arena la saturación llega antes.
+
+Y cuando el pool se llena, `group.add()` **no hace nada** y el círculo recién creado
+queda como sprite huérfano (mismo patrón que B2). **[verificado]:** 360 llamadas a
+`add()` sin efecto.
+
+**Arreglo:** escuchar `worldbounds` en `this.physics.world` (que sí emite) o, más
+robusto, culling por bounds en el `update()` de la escena. Va en Fase A.
 
 ### B4. Cada partida nueva hereda la anterior (fuga acumulativa, medida)
 
@@ -142,16 +171,40 @@ El tanque tiene **80 HP / 20 de daño / 40 px/s**: con Plasma (15 de daño cada 
 son **5,3 s de disparo perfecto e ininterrumpido** solo para el tanque, mientras los
 otros 8 enemigos te comen.
 
-**Diagnóstico:** el juego no es "difícil", es **matemáticamente imposible** en la
-configuración inicial. Y como el `waveNumber` solo cuenta hordas, el marcador de
-progreso queda clavado en 0 — que es exactamente lo que se ve en las capturas.
+**Diagnóstico (corregido):** no sé si el juego es "matemáticamente imposible". Cinco
+corridas todas en `wave 1` es un resultado consistente y preocupante, pero **no medí
+cuántas de esas corridas fallaron por balance y cuántas por los bugs de la sección 1**
+(B3 acumulando proyectiles trabados, B4 filtrando estado). Las dos hipótesis siguen
+abiertas:
+
+1. **Falta de margen de reacción**: 6-10 enemigos + 1 tanque caen de golpe a los 25 s
+   sobre un jugador con 100 HP y 50 de escudo.
+2. **Los bugs dominan**: el pool de proyectiles se satura y el estado filtrado degrada
+   la partida antes de que el balance importe.
+
+**No se puede decidir con los bugs puestos.** Por eso la Fase A no trae cambios de
+balance: trae los arreglos, y **después** se vuelve a medir. Si con los bugs corregidos
+las corridas siguen terminando en `wave 1`, entonces sí es balance.
 
 ### B6. En móvil, Game Over es un callejón sin salida
 
-`GameOverScene` solo escucha teclas: `[R] Restart`, `[M] Menu`, `[S] Shop`
-(`keydown-R/M/S`), y dentro de la tienda los hotkeys `1-5` + `ESC`. No hay un solo
-botón táctil. **Un jugador de celular queda encerrado en la pantalla de Game Over**,
-sin reiniciar, sin menú, sin tienda.
+`GameOverScene` solo escucha teclas: `keydown-R`, `keydown-M`, `keydown-S`, más los
+hotkeys `1-5` y `ESC` dentro de la tienda. No hay un solo elemento `setInteractive()`.
+
+**[verificado]** En un contexto táctil, leyendo los `Text` reales de la escena y
+tocándolos en sus coordenadas:
+
+```
+labels: ["GAME OVER", "Wave reached: 0", "Level reached: 1", "Coins this run: 0",
+         "Total coins: 0", "[R] Restart", "[M] Menu", "[S] Shop", "Tip: ..."]
+tap "[R] Restart" → interactive: false → GameOverScene → GameOverScene  (sin cambio)
+tap "[M] Menu"    → interactive: false → GameOverScene → GameOverScene  (sin cambio)
+tap "[S] Shop"    → interactive: false → GameOverScene → GameOverScene  (sin cambio)
+```
+
+**Un jugador de celular queda encerrado en la pantalla de Game Over**: sin reiniciar,
+sin menú, sin tienda. Es el único hallazgo que deja el juego **injugable** en móvil,
+y por eso va primero en la Fase A.
 
 ---
 
@@ -174,22 +227,25 @@ gasta una elección de nivel en una mejora invisible.
 `bouncing-shots` sí funciona (1 rebote), pero se ofrece con duración `-1` sin
 registro de "ya aplicado": puede salir repetido en la misma partida y no acumula.
 
-### J3. Los i-frames no protegen contra el enjambre
+### J3. El daño por contacto no respeta los i-frames como debería
 
 `Player.takeDamage` pone 500 ms de invulnerabilidad, pero el enemigo en contacto
-aplica daño en **cada frame de colisión**.
+llama a `takeDamage` en **cada frame de colisión**.
 
-**[verificado]** Tres chasers encima del jugador, 4 s de contacto:
-**720 llamadas a `takeDamage` = 180 por segundo**. Con 500 ms de i-frames, una
-ventana "correcta" debería dar 2 llamadas por segundo.
+**[verificado]** Tres chasers apilados encima del jugador durante 4 s:
+**720 llamadas a `takeDamage` = 180 por segundo**. Con 500 ms de i-frames, la cuenta
+de *llamadas* correcta sería 2 por segundo (8 en 4 s), no 180.
 
-**[verificado]** En partida real: 82 eventos de daño (38 HP) en **1,9 s**; 81
-eventos (30 HP) en 1,4 s. En una corrida de 30 s, **325 eventos / 157,8 HP**.
-El escudo (50) se evapora en el primer contacto y el jugador no alcanza a reaccionar.
+El guard de invulnerabilidad sí descarta la mayoría de esas 720 llamadas, así que el
+daño neto no es 30× lo esperado — pero la arquitectura es la equivocada: en vez de
+"un golpe por enemigo cada 500 ms", el juego hace 720 chequeos para aplicar ~2 golpes.
+Y cuando hay un enjambre encima, las ventanas se solapan entre enemigos y el jugador
+recibe daño continuo en lugar de en pulsos discretos.
 
-**Arreglo propuesto:** el overlap debe resolver el daño una vez por enemigo por
-ventana de i-frame (marcar el enemigo como "ya cobrado" durante esa ventana) y
-aplicar knockback al enemigo tras el impacto, para que no se quede encima.
+**Arreglo propuesto:** resolver el daño por **enemigo** (una vez por enemigo por
+ventana de i-frame, con marca de "ya cobrado" en el propio enemigo) y aplicar
+knockback tras el impacto, para que no se quede encima. Eso convierte 720 llamadas en
+las 2/s correctas y hace el daño legible.
 
 ### J4. No hay onboarding ni curva de entrada
 
@@ -321,17 +377,49 @@ del menú: solo "NEON DRIFT" + "Tap to play").
 
 ## 5. Hoja de ruta propuesta
 
-### Fase A — Correcciones (sin esto, lo demás no se puede evaluar)
+### Fase A — Correcciones (COMPLETADA)
 
-| # | Cambio | Criterio de aceptación |
-|---|---|---|
-| A1 | Ciclo de vida de `GameScene`: registrar `shutdown` en `create()` | 2ª partida idéntica a la 1ª (mismo tiempo de supervivencia con mismo input) |
-| A2 | Overlaps: resolver el daño una vez por enemigo por ventana de i-frame (y no 80 veces) | medir HP perdido/segundo con N enemigos encima y que sea ≈ N × daño / 0,5 s |
-| A3 | Limpiar proyectiles enemigos con `worldbounds` del **mundo** (o culling por bounds) | 0 proyectiles `active` fuera del mundo tras 60 s |
-| A4 | Nunca crear sprites fuera del pool: `if (group.isFull()) return;` antes de instanciar, o subir el pool y agregar despawn | 0 sprites de enemigo fuera del grupo tras 120 s |
-| A5 | Anti-atasco de enemigos (separación por ejes + timeout) | ningún enemigo con `speed > 20` y `< 12 px` de desplazamiento en 5 s |
-| A6 | Balance del arranque: primer horde más chico, tanque con menos HP o más tarde, HP/daño del jugador ajustados | un jugador nuevo (meta 0) llega **al menos a la oleada 3** con input razonable |
-| A7 | Botones táctiles en `GameOverScene` (Restart / Menu / Shop) y pausa táctil en `GameScene` | jugar una partida completa solo con toques |
+Sin esto, cualquier medición de dificultad estaba contaminada. El orden fue por
+gravedad, y al terminar se re-midió el balance (A6) — con un resultado que cierra la
+pregunta que había quedado abierta en B5.
+
+| # | Cambio | Criterio de aceptación | Estado |
+|---|---|---|---|
+| A1 | **Botones táctiles en `GameOverScene`** (RESTART / MAIN MENU / SHOP) + filas de tienda tocables + botón CLOSE + pausa táctil `II` en `GameScene` | los 3 botones son interactivos y el tap cambia de escena | ✅ verificado por test |
+| A2 | Ciclo de vida: registrar `Phaser.Scenes.Events.SHUTDOWN` en las **3 escenas** | listeners de `resize` constantes entre partidas; flags de power-ups limpios; colliders estables | ✅ verificado por test |
+| A3 | Proyectiles: culling por bounds en `update()` | 0 proyectiles trabados en el muro | ✅ verificado por test |
+| A4 | `if (group.isFull()) return;` **antes** de instanciar (enemigos y proyectiles) | 0 sprites fuera de su grupo | ✅ aplicado |
+| A5 | Overlaps: daño una vez por ventana de i-frame + knockback de 180 ms con deslizamiento por ejes | ~8 golpes reales en 4 s (antes 720 llamadas) | ✅ verificado por test |
+| A6 | Re-medición del balance con los bugs corregidos | ver la tabla de abajo | ✅ medido |
+
+**Descartado de la Fase A:** el anti-atasco de enemigos (B1) — no existía el problema
+(0 de 72 enemigos contra 24 pilares).
+
+#### A6 — El balance NO era el problema (medición pre/post)
+
+Corridas con **perfil limpio** (meta-progresión cero, como un jurado que abre el juego
+por primera vez) y el mismo input scripted competente (apunta al enemigo más cercano,
+dispara sostenido, kitea cuando algo se acerca a 190 px):
+
+| | Supervivencia | Oleada máx. | Nivel máx. | ¿Llegó a Game Over? |
+|---|---|---|---|---|
+| **Antes** (5 corridas) | 24,9 / 26,7 / 26,7 / ~30 / ~30 s | **1** | **1** | sí, todas |
+| **Después** (4 corridas) | 67,6 / 116,1 / 45,0 / 120,1 s | **4** | **8** | sí, todas |
+
+Todas las corridas post-fix terminan en Game Over con 2-6 HP: el juego sigue siendo
+exigente, pero ahora **la progresión existe** (nivel 8, oleada 4) en vez de estar
+clavada en `wave 1 / level 1`.
+
+Poder de juego medido: **2,6× más supervivencia promedio** (27,7 s → 87,2 s) y el tope
+de progresión pasó de nivel 1 a nivel 8, de oleada 1 a oleada 4. **Sin tocar una sola
+cifra de balance**: los únicos cambios fueron los arreglos de A1-A5.
+
+La hipótesis 2 de B5 ("los bugs dominan") queda **confirmada**: los power-ups
+invisibles de B4 (buffos heredados de la partida anterior), los proyectiles trabados de
+B3 y el daño continuo de J3 eran lo que hacía imposible progresar.
+
+**Por eso la Fase B puede empezar por el contenido (J1-J8) y no por el balance.** Si en
+el futuro hace falta subir o bajar dificultad, ahora hay una línea base medible.
 
 ### Fase B — Jugabilidad
 

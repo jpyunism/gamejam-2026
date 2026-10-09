@@ -99,12 +99,24 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  public takeDamage(amount: number, time: number): void {
+  /** True while the i-frame window from the last landed hit is still open. */
+  public isInvulnerable(time: number): boolean {
+    return time < this.invulnerableUntil;
+  }
+
+  /**
+   * Applies damage, shield first.
+   *
+   * Returns `true` only when the hit actually landed (i.e. no i-frames were
+   * active). Callers use that to decide whether to react — pushing an enemy
+   * back, playing a hit effect — instead of reacting to every overlap callback.
+   */
+  public takeDamage(amount: number, time: number): boolean {
     if (!this.isAlive) {
-      return;
+      return false;
     }
-    if (time < this.invulnerableUntil) {
-      return;
+    if (this.isInvulnerable(time)) {
+      return false;
     }
 
     let remaining = amount;
@@ -125,6 +137,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.isAlive = false;
       this.emit("player-died");
     }
+
+    return true;
   }
 
   public equip(weapons: Weapon[]): void {

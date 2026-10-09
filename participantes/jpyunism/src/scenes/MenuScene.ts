@@ -124,6 +124,12 @@ export class MenuScene extends Phaser.Scene {
       this.buildLayout(gameSize.width, gameSize.height);
     };
     this.scale.on("resize", this.resizeHandler);
+
+    // Phaser calls `init()` and `create()` by name but NEVER `shutdown()` — it
+    // only emits a SHUTDOWN event — so the method below is dead code unless it
+    // is wired up here. Without it the scene leaks its resize handler and the
+    // settings panel on every menu visit.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
   }
 
   private buildLayout(width: number, height: number): void {

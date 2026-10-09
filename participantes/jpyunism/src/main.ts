@@ -32,4 +32,13 @@ const config: Phaser.Types.Core.GameConfig = {
   },
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+/**
+ * Expose the game instance for the automated tests (`test-*.spec.ts`).
+ *
+ * The Playwright suite needs to read and drive live scene state to assert on
+ * gameplay regressions; without a handle it can only look at the canvas. This
+ * is a test seam, not a public API — nothing in `src/` reads it.
+ */
+(window as unknown as { __game: Phaser.Game }).__game = game;

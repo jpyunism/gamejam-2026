@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { MetaProgress } from "../store/MetaProgress";
 import { scaleFactor, scaledFont } from "../core/layout";
+import { TouchButton } from "../ui/TouchButton";
 import { MobileBootstrap } from "../systems/MobileBootstrap";
 import { RotateOverlay } from "../systems/RotateOverlay";
 
@@ -38,6 +39,8 @@ export class GameOverScene extends Phaser.Scene {
   private coinsLabel: Phaser.GameObjects.Text | null = null;
   private isShopOpen: boolean = false;
   private shopHandlers: Array<{ event: string; fn: () => void }> = [];
+  /** Shop's explicit close button (ESC alternative for touch devices). */
+  private shopCloseButton: TouchButton | null = null;
 
   /** Track keyboard handlers for cleanup in shutdown(). */
   private keydownRHandler!: (event: KeyboardEvent) => void;
@@ -52,8 +55,43 @@ export class GameOverScene extends Phaser.Scene {
   /** Resize handler reference for cleanup. */
   private resizeHandler: ((gameSize: Phaser.Structs.Size) => void) | null = null;
 
+  /** Tap/click action buttons rebuilt with the layout. */
+  private actionButtons: TouchButton[] = [];
+
   constructor() {
     super("GameOverScene");
+  }
+
+  /**
+   * The three run-ending actions, as data so the layout loop and the keyboard
+   * handlers drive the exact same behaviour (one source of truth per action).
+   */
+  private buildActions(): Array<{
+    label: string;
+    borderColor: number;
+    textColor: string;
+    onClick: () => void;
+  }> {
+    return [
+      {
+        label: "RESTART",
+        borderColor: 0x00ff66,
+        textColor: "#00ff66",
+        onClick: () => this.scene.start("GameScene"),
+      },
+      {
+        label: "MAIN MENU",
+        borderColor: 0x00ffff,
+        textColor: "#00ffff",
+        onClick: () => this.scene.start("MenuScene"),
+      },
+      {
+        label: "SHOP",
+        borderColor: 0xffd700,
+        textColor: "#ffd700",
+        onClick: () => this.toggleShop(),
+      },
+    ];
   }
 
   init(data: GameOverData): void {
@@ -80,6 +118,12 @@ export class GameOverScene extends Phaser.Scene {
       this.buildLayout(gameSize.width, gameSize.height);
     };
     this.scale.on("resize", this.resizeHandler);
+
+    // Phaser calls `init()` and `create()` by name but NEVER `shutdown()` — it
+    // only emits a SHUTDOWN event — so the method below is dead code unless it
+    // is wired up here. Without it the scene leaks its resize handler and any
+    // open shop panel on every game over.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
   }
 
   private buildLayout(width: number, height: number): void {
@@ -88,6 +132,7 @@ export class GameOverScene extends Phaser.Scene {
     // Clear existing elements
     this.children.removeAll(true);
     this.coinsLabel = null;
+    this.actionButtons = [];
 
     // Title
     const title = this.add
@@ -138,22 +183,41 @@ export class GameOverScene extends Phaser.Scene {
       )
       .setOrigin(0.5);
 
-    // Instructions
+    // Instructions — real buttons, not just keyboard hints. The hint text keeps
+    // the key names so desktop players still discover the shortcuts, but each
+    // action now owns a tap/click target too (a phone player was previously
+    // locked out of Game Over entirely).
     const hintStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: "monospace",
-      fontSize: scaledFont(16, s),
-      color: "#00ffff",
+      fontSize: scaledFont(13, s),
+      color: "#888888",
       align: "center",
     };
 
+    const btnW = Math.round(210 * s);
+    const btnH = Math.round(46 * s);
+    const btnGap = Math.round(16 * s);
+    const btnX = width / 2;
+    let btnY = Math.round(368 * s);
+
+    for (const b of this.buildActions()) {
+      const btn = new TouchButton(this, btnX, btnY, btnW, btnH, b.label, {
+        onClick: b.onClick,
+        borderColor: b.borderColor,
+        textColor: b.textColor,
+      });
+      this.actionButtons.push(btn);
+      btnY += btnH + btnGap;
+    }
+
+    // Keyboard shortcut reminder, under the buttons.
     this.add
-      .text(width / 2, Math.round(360 * s), "[R] Restart", hintStyle)
-      .setOrigin(0.5);
-    this.add
-      .text(width / 2, Math.round(388 * s), "[M] Menu", hintStyle)
-      .setOrigin(0.5);
-    this.add
-      .text(width / 2, Math.round(416 * s), "[S] Shop", hintStyle)
+      .text(
+        width / 2,
+        btnY + Math.round(4 * s),
+        "[R] Restart   [M] Menu   [S] Shop",
+        hintStyle,
+      )
       .setOrigin(0.5);
 
     // Bottom hint
@@ -217,6 +281,13 @@ export class GameOverScene extends Phaser.Scene {
     }
     this.isShopOpen = true;
 
+    // Defensive: a previous panel that was torn down without closeShop() would
+    // leave the button orphaned in the scene.
+    if (this.shopCloseButton) {
+      this.shopCloseButton.destroy();
+      this.shopCloseButton = null;
+    }
+
     const { width, height } = this.scale;
     const s = scaleFactor(width);
 
@@ -265,18 +336,43 @@ export class GameOverScene extends Phaser.Scene {
 
       const txt = this.add.text(0, yStart + i * yStep, line, lineStyle);
       txt.setOrigin(0.5);
+      // Tappable row: the whole line is the hit target, so a phone player can
+      // buy without a keyboard.
+      txt.setInteractive({ useHandCursor: true });
+      txt.on("pointerover", () => txt.setColor("#66ddff"));
+      txt.on("pointerout", () => this.refreshShop());
+      txt.on("pointerdown", () => this.tryPurchase(key));
       panel.add(txt);
       lines[key] = txt;
     }
 
     const status = this.add
-      .text(0, Math.round(110 * s), "Press 1-5 to buy — ESC to close", {
+      .text(0, Math.round(110 * s), "Tap a row to buy  ·  1-5 / ESC on keyboard", {
         fontFamily: "monospace",
         fontSize: scaledFont(12, s),
         color: "#888888",
       })
       .setOrigin(0.5);
     panel.add(status);
+
+    // Explicit close target — ESC was the only way out before.
+    const closeBtn = new TouchButton(
+      this,
+      0,
+      Math.round(148 * s),
+      Math.round(160 * s),
+      Math.round(34 * s),
+      "CLOSE",
+      {
+        onClick: () => this.closeShop(),
+        borderColor: 0x888888,
+        textColor: "#cccccc",
+      },
+    );
+    // TouchButton builds its objects on the scene; re-parent them into the panel
+    // so they move and scale with the rest of the shop.
+    panel.add(closeBtn.objects());
+    this.shopCloseButton = closeBtn;
 
     this.shopPanel = panel;
     this.shopLines = lines as ShopLineRefs;
@@ -372,6 +468,7 @@ export class GameOverScene extends Phaser.Scene {
     }
     this.shopLines = null;
     this.shopStatus = null;
+    this.shopCloseButton = null;
 
     // Unbind every shop-scoped keyboard listener we registered.
     for (const { event, fn } of this.shopHandlers) {

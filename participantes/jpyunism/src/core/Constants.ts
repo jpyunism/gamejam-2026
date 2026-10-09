@@ -58,6 +58,12 @@ export const ENEMY = {
   SHOOTER_PROJECTILE_SPEED: 200,
   SHOOTER_PROJECTILE_RADIUS: 5,
   SHOOTER_PROJECTILE_DAMAGE: 8,
+
+  // ─── Knockback on contact ────────────────────────────────────────────
+  // Applied when an enemy lands a hit on the player. Without it a single
+  // chaser keeps pressing and re-triggers the moment the i-frames open.
+  KNOCKBACK_SPEED: 260,
+  KNOCKBACK_MS: 180,
 } as const;
 
 // ─── Weapons ────────────────────────────────────────────────────────────

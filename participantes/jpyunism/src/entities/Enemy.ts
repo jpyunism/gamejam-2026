@@ -1,4 +1,8 @@
 import Phaser from "phaser";
+import { ENEMY } from "../core/Constants";
+
+/** How long a knockback impulse suppresses the enemy's own steering. */
+const KNOCKBACK_MS = ENEMY.KNOCKBACK_MS;
 
 export interface LootDrop {
   coins: number;
@@ -21,6 +25,14 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   public speed: number;
   public damage: number;
   public isAlive: boolean = true;
+
+  /**
+   * Scene time until which this enemy is being pushed back and must NOT steer
+   * itself. Subclasses call `isKnockedBack(time)` at the top of their update:
+   * they re-set the velocity every frame with `physics.moveTo`, which would
+   * otherwise overwrite the knockback impulse immediately.
+   */
+  public knockbackUntil: number = 0;
 
   /**
    * Ambient glow circle drawn behind the sprite. Owned by the enemy so it
@@ -118,6 +130,38 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
       coins: Phaser.Math.Between(1, 3),
       healChance: 0.15,
     };
+  }
+
+  /**
+   * Starts a knockback impulse away from the player.
+   *
+   * The enemy stops steering for `ENEMY.KNOCKBACK_MS` so the impulse is not
+   * overwritten by the subclass's per-frame `physics.moveTo` call.
+   */
+  public startKnockback(speed: number, dx: number, dy: number, time: number): void {
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 0.0001) {
+      return;
+    }
+    this.knockbackUntil = time + KNOCKBACK_MS;
+    const body = this.body as Phaser.Physics.Arcade.Body | null;
+    if (body) {
+      body.setVelocity((dx / len) * speed, (dy / len) * speed);
+    }
+  }
+
+  /** True while the knockback impulse owns this enemy's velocity. */
+  public isKnockedBack(time: number): boolean {
+    return time < this.knockbackUntil;
+  }
+
+  /**
+   * Signals that the knockback window is over. Subclasses do not need to do
+   * anything: their update resumes steering on the next frame. Kept as a named
+   * hook so the caller reads as intent rather than bookkeeping.
+   */
+  public resumeMovement(): void {
+    this.knockbackUntil = 0;
   }
 
   public abstract update(
